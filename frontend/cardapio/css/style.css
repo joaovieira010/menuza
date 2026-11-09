@@ -1,0 +1,71 @@
+:root {
+  --cor-principal: #C2410C;
+  --cor-escura: #7C2D12;
+  --cor-fundo: #FFFBF5;
+  --cor-texto: #1C1917;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background-color: var(--cor-fundo);
+  color: var(--cor-texto);
+}
+
+header {
+  background-color: var(--cor-escura);
+  color: #FFFFFF;
+  padding: 20px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.busca {
+  padding: 16px 20px 8px;
+}
+
+.busca label {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.busca input {
+  width: 100%;
+  box-sizing: border-box;
+  height: 48px;
+  padding: 0 14px;
+  border: 1px solid #D6D3D1;
+  border-radius: 12px;
+  font-size: 16px;
+}
+
+nav {
+  display: flex;
+  gap: 8px;
+  padding: 10px 20px 12px;
+  overflow-x: auto;
+}
+
+nav button {
+  flex: none;
+  height: 44px;
+  padding: 0 18px;
+  border: 1px solid #D6D3D1;
+  border-radius: 22px;
+  background-color: #FFFFFF;
+  color: var(--cor-texto);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+nav button.ativa {
+  background-color: var(--cor-principal);
+  border-color: var(--cor-principal);
+  color: #FFFFFF;
+  font-weight: 600;
+}
