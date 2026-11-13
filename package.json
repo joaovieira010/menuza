@@ -1,0 +1,40 @@
+{
+  "name": "menuza",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cardápio digital e gestão de pedidos multi-tenant",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "migrate": "node backend/src/database/migrate.js",
+    "seed": "node backend/src/database/seed.js",
+    "dev": "node --watch backend/src/server.js",
+    "start": "node backend/src/server.js",
+    "test": "jest --runInBand",
+    "test:browser": "node backend/tests/browser.cjs"
+  },
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "cookie-parser": "^1.4.7",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.2.1",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^2.0.2",
+    "pg": "^8.16.3",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "jest": "^30.2.0",
+    "playwright-core": "^1.65.0",
+    "supertest": "^7.1.4"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": [
+      "**/backend/tests/**/*.test.js"
+    ]
+  }
+}
