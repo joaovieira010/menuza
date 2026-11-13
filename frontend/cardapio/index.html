@@ -1,34 +1,161 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Cardápio-Menuza</title>
-        <link rel="stylesheet" href="css/style.css">
-    </head>
-    <body>
-        <header>
-            <h1>Menuza Restaurantes</h1>
-        </header>
-        <div class="busca">
-            <label for="busca">Buscar no cardápio</label>
-            <input id="busca" type="search" placeholder="Buscar no cardápio">
-
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#7C2D12" />
+    <title>Cardápio • Menuza</title>
+    <link rel="stylesheet" href="/assets/cardapio/css/style.css" />
+    <script type="module" src="/assets/cardapio/js/app.js"></script>
+  </head>
+  <body>
+    <header class="store-header">
+      <div class="topline">
+        <a href="/" class="brand">menuza<span>●</span></a
+        ><span>FEITO PARA PEDIR BEM</span>
+      </div>
+      <div id="store" class="store-info"><p>Carregando cardápio…</p></div>
+    </header>
+    <main class="menu-main">
+      <div class="section-title">
+        <div>
+          <p class="eyebrow">ESCOLHA. PERSONALIZE. APROVEITE.</p>
+          <h2>O que vai ser hoje?</h2>
         </div>
-        <nav aria-label="Categorias">
-            <button type="button" class="ativa">Lanches</button>
-            <button type="button">Porções</button>
-            <button type="button">Bebidas</button>
-            <button type="button">Sobremesas</button>
-
-        </nav>
-            <main>
-      <section>
-        <h2>Lanches</h2>
-      </section>
+        <span class="muted">Peça direto com a loja</span>
+      </div>
+      <div class="busca">
+        <label for="busca">Buscar no cardápio</label
+        ><input id="busca" type="search" placeholder="Qual é a sua vontade?" />
+      </div>
+      <nav id="categories" aria-label="Categorias"></nav>
+      <p id="notice" role="status" aria-live="polite"></p>
+      <div id="products"></div>
+      <footer>
+        Preparado com carinho. Pedido direto com o estabelecimento.<br /><a
+          href="/admin"
+          >Painel da loja</a
+        >
+        · Menuza
+      </footer>
     </main>
-
-
-    </body>
+    <button id="cart-open" class="cart-bar" type="button" hidden>
+      <span id="cart-count"></span><span>Ver meu pedido →</span
+      ><strong id="cart-total"></strong>
+    </button>
+    <dialog id="product-dialog" aria-labelledby="product-title">
+      <div id="product-content"></div>
+    </dialog>
+    <dialog id="cart-dialog" aria-labelledby="cart-title">
+      <div class="dialog-head">
+        <h2 id="cart-title">Meu pedido</h2>
+        <button
+          type="button"
+          data-close="cart-dialog"
+          aria-label="Fechar carrinho"
+        >
+          ✕
+        </button>
+      </div>
+      <div id="cart-content"></div>
+    </dialog>
+    <dialog id="checkout-dialog" aria-labelledby="checkout-title">
+      <div class="dialog-head">
+        <h2 id="checkout-title">Só falta finalizar</h2>
+        <button
+          type="button"
+          data-close="checkout-dialog"
+          aria-label="Fechar finalização"
+        >
+          ✕
+        </button>
+      </div>
+      <form id="checkout">
+        <fieldset>
+          <legend>Seus dados</legend>
+          <label
+            >Seu nome<input
+              name="nome"
+              autocomplete="name"
+              required
+              maxlength="120" /></label
+          ><label
+            >Telefone com DDD<input
+              name="telefone"
+              type="tel"
+              autocomplete="tel"
+              required
+              maxlength="20"
+              placeholder="(11) 99999-9999"
+          /></label>
+        </fieldset>
+        <fieldset>
+          <legend>Como você quer receber?</legend>
+          <label
+            >Modalidade<select name="modalidade">
+              <option value="entrega">Entrega</option>
+              <option value="retirada">Retirada no estabelecimento</option>
+            </select></label
+          >
+          <div id="address">
+            <label
+              >Rua<input
+                name="rua"
+                autocomplete="address-line1"
+                maxlength="150"
+            /></label>
+            <div class="form-row">
+              <label>Número<input name="numero" maxlength="20" /></label
+              ><label>Bairro<input name="bairro" maxlength="100" /></label>
+            </div>
+            <label
+              >Complemento<input
+                name="complemento"
+                autocomplete="address-line2"
+                maxlength="150" /></label
+            ><label
+              >Ponto de referência<input name="referencia" maxlength="150"
+            /></label>
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>Pagamento na entrega ou retirada</legend>
+          <label
+            >Forma de pagamento<select name="forma_pagamento">
+              <option value="pix">Pix</option>
+              <option value="cartao">Cartão</option>
+              <option value="dinheiro">Dinheiro</option>
+            </select></label
+          ><label id="change-label" hidden
+            >Troco para (R$)<input
+              name="troco_para"
+              inputmode="decimal"
+              placeholder="Deixe vazio se não precisa" /></label
+          ><label
+            >Observações<textarea
+              name="observacoes"
+              maxlength="1000"
+              rows="3"
+            ></textarea>
+          </label>
+        </fieldset>
+        <p class="privacy">
+          Privacidade: seu nome, telefone e endereço serão usados pela loja para
+          preparar e entregar este pedido. A mensagem também será compartilhada
+          com o WhatsApp ao continuar. Para consultar ou excluir seus dados,
+          fale com a loja. Não informe dados de cartão.
+        </p>
+        <div id="checkout-total" class="totals"></div>
+        <p id="checkout-error" role="alert"></p>
+        <button id="confirm-order" class="primary wide">
+          Confirmar e ir para o WhatsApp →
+        </button>
+        <p class="muted">
+          O pedido será salvo antes de abrir o WhatsApp. O pagamento é combinado
+          com a loja.
+        </p>
+      </form>
+      <div id="success" hidden></div>
+    </dialog>
+  </body>
 </html>
-

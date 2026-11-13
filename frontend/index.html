@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Menuza • Seu negócio, à mesa</title>
+    <link rel="stylesheet" href="/assets/cardapio/css/style.css" />
+    <script type="module" src="/assets/home.js"></script>
+  </head>
+  <body>
+    <main class="welcome">
+      <a class="brand" href="/">menuza<span>●</span></a>
+      <p class="eyebrow">CARDÁPIO DIGITAL · PEDIDOS SIMPLES</p>
+      <h1>Seu próximo pedido<br />começa por aqui.</h1>
+      <p>Recebeu o link de uma loja? Informe o endereço do cardápio abaixo.</p>
+      <form id="open-menu">
+        <label for="slug">Endereço do cardápio</label
+        ><input
+          id="slug"
+          placeholder="nome-da-loja"
+          required
+          pattern="[a-z0-9-]+"
+          maxlength="80"
+        /><button class="primary">Abrir cardápio →</button>
+      </form>
+      <a href="/admin">Acessar meu painel</a>
+    </main>
+  </body>
+</html>
