@@ -54,6 +54,8 @@ O teste no Chrome verificou:
 8. Troca para Doces Demo com catálogo e carrinho independentes.
 9. Ausência de erros de JavaScript de página durante esse percurso.
 
+Uma repetição detectou falta de sincronização no teste entre mudanças de status: a mensagem de sucesso da etapa anterior ainda estava visível. O teste foi corrigido para aguardar o status específico no cartão do pedido e repetido com sucesso na versão final (pedido de QA nº 3). Não ficou falha de teste pendente.
+
 A navegação para WhatsApp foi interceptada e respondeu localmente. Não foi enviada mensagem real. Pedidos fictícios “Cliente QA navegador” e produtos de QA desativados ficam na base demo como evidência do fluxo.
 
 Screenshots em `/tmp/menuza-cardapio-mobile.png`, `/tmp/menuza-dashboard.png` e `/tmp/menuza-pedidos.png`. Cardápio mobile e dashboard desktop também foram inspecionados visualmente.

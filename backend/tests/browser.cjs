@@ -112,9 +112,10 @@ async function main() {
       "Concluído →",
     ]) {
       await card.getByRole("button", { name, exact: true }).click();
-      await admin
-        .getByRole("status")
-        .filter({ hasText: "Status atualizado." })
+      // A mensagem de sucesso pode ser a da etapa anterior: aguarde o status deste pedido.
+      await card
+        .locator(".badge")
+        .filter({ hasText: new RegExp("^" + name.replace(" →", "") + "$") })
         .waitFor();
     }
     assert.equal(await card.locator(".badge").textContent(), "Concluído");
