@@ -1,67 +1,53 @@
-# Como a Menuza funciona
+# Arquitetura Menuza SaaS 1.0
 
-A aplicação tem um único servidor Node.js. Ele entrega os arquivos de tela e responde à API. O PostgreSQL guarda os dados. O navegador nunca se conecta diretamente ao banco.
+Um servidor Express 5 entrega API e HTML/CSS/JavaScript puro. PostgreSQL guarda tenants, catálogo, pedidos, sessões e financeiro. Não houve substituição de stack, ORM ou reescrita da aplicação.
 
-```mermaid
-flowchart LR
-    C[Cardápio no celular] -->|Busca loja pelo slug| A[Express / API]
-    P[Painel administrativo] -->|Cookie de autenticação| A
-    A -->|SQL com parâmetros e loja| B[(PostgreSQL)]
-    B --> A
-    A -->|Pedido salvo e link de conversa| C
-    C -->|Cliente envia a mensagem| W[WhatsApp da loja]
-```
+## Contextos e autorização
 
-## Onde fica cada parte
+- **SUPERADMIN**: usuário global, sem `estabelecimento_id`, cookie `menuza_platform`, API `/api/superadmin`. Cria empresas e contas administrativas; não é um administrador de loja.
+- **STORE_ADMIN**: usuário com tenant obrigatório, cookie `menuza`, API `/api/admin`. O identificador vem do usuário consultado no banco, nunca do corpo enviado pelo navegador.
+- **CUSTOMER**: acesso público sem conta/senha; resolve tenant pelo slug e pode criar pedidos. Não há consulta pública de dados pessoais de pedidos.
 
-| Caminho                   | Responsabilidade                                        |
-| ------------------------- | ------------------------------------------------------- |
-| `frontend/cardapio`       | Cardápio, personalização, carrinho e finalização        |
-| `frontend/admin`          | Login, gestão de pedidos e cadastros                    |
-| `frontend/shared.js`      | Elementos de tela, requisições e formatação de dinheiro |
-| `backend/src/config`      | Carregamento e validação da configuração                |
-| `backend/src/routes`      | Endereços e autenticação do painel                      |
-| `backend/src/controllers` | Ações administrativas e consultas                       |
-| `backend/src/services`    | Cardápio e regras de cálculo/gravação do pedido         |
-| `backend/src/middlewares` | Autenticação e validação das entradas                   |
-| `backend/src/database`    | Conexão, migrations e seed                              |
-| `backend/tests`           | Testes unitários, integração e navegador                |
+As constraints impedem superadmin vinculado a loja e store admin sem loja. IDs de usuários são globais; e-mails são únicos globalmente. O JWT HS256 de oito horas identifica uma sessão UUID persistida. Cada chamada verifica assinatura, emissor, sessão não expirada, usuário ativo, papel e vínculo. Logout remove a sessão; suspensão administrativa e troca de senha removem sessões da loja. Cookies das duas áreas são separados, httpOnly, SameSite Strict e Secure em produção.
 
-## Uma base, várias lojas
+Categorias, produtos, grupos, adicionais, clientes e pedidos têm `estabelecimento_id` e consultas com filtro obrigatório. FKs compostas impedem vínculos cruzados. O catálogo tem whitelist de campos públicos da loja, sem contato comercial, contador ou dados financeiros.
 
-O endereço `/doces-demo` informa qual loja o cliente quer consultar. A API resolve o slug para um `estabelecimento_id`. Esse identificador acompanha categorias, produtos, adicionais, clientes, pedidos, itens e histórico.
+## Cadastro e contratos
 
-No painel, o identificador vem do usuário autenticado. Enviar outro `estabelecimento_id` no corpo da requisição não muda a loja do usuário. As consultas usam o identificador vindo do middleware de autenticação.
+Migrations aditivas introduzem `planos`, `assinaturas`, `pagamentos`, `politica_cobranca`, `auditoria_plataforma`, `execucoes_cobranca`, `lembretes_cobranca`, `sessoes` e `interesses_comerciais`. Lojas antigas recebem avaliação de 14 dias; não são fabricados recebimentos. Seed cria assinatura apenas junto com cada demo novo e nunca sobrescreve credenciais existentes.
 
-As chaves estrangeiras compostas são uma segunda proteção: um produto da loja A não pode apontar para uma categoria da loja B, nem um item de pedido para um pedido de outra loja. Elas comparam o par `(estabelecimento_id, id)`.
+Cadastro comercial é uma transação: loja, administrador bcrypt, assinatura e auditoria confirmam juntos ou fazem rollback. Slug explícito é validado; geração automática normaliza o nome e acrescenta sufixo aleatório. A constraint UNIQUE é a garantia final. Demos têm marca própria e slugs preservados. Alterar slug mantém o mesmo tenant e seus pedidos; links antigos de clientes comuns deixam de funcionar (não há aliases).
 
-Duas buscas iniciais precisam identificar o contexto: estabelecimento pelo slug público e usuário pelo e-mail globalmente único no login. Depois disso, as consultas de negócio usam a loja resolvida. A tabela `estabelecimentos` usa seu próprio `id` como identificador do tenant; `migrations` é uma tabela técnica global.
+Valor contratado em centavos é um snapshot, separado do preço atual de tabela do plano. Limites/funcionalidades são consultados do plano atual. Produtos ativos têm trigger com trava da loja para limite concorrente; pedidos/mês são contados dentro da transação serializada da loja. Grupos/adicionais e personalização têm autorização no backend. Reduzir um limite não apaga registros existentes.
 
-## O caminho de um pedido
+## Acesso e cobrança
 
-1. O cardápio busca `GET /api/:slug/cardapio`. A resposta tem dados da loja, categorias ativas, produtos ativos e adicionais aplicáveis.
-2. O cliente escolhe quantidades e adicionais. O carrinho fica no `localStorage` com uma chave que inclui o slug. A tela estima o total usando os preços recebidos da API.
-3. Ao confirmar, envia IDs, quantidades, dados necessários para atendimento e observações. Preços enviados por alguém que alterou o navegador são descartados pela validação.
-4. O servidor inicia uma transação. É um bloco no qual todas as gravações dão certo juntas ou todas são desfeitas.
-5. Ele trava a linha da loja com `FOR UPDATE`. Pedidos de lojas diferentes podem continuar ao mesmo tempo. Pedidos da mesma loja aguardam a sua vez para receber o próximo número.
-6. Busca produtos ativos, verifica vínculo e limites dos adicionais, calcula preços em centavos e confere o valor para troco. Retirada tem taxa zero. Loja fechada não recebe pedido.
-7. Salva cliente, pedido, itens, adicionais e o primeiro status. Copia nomes e preços nos itens: editar o produto amanhã não modifica o pedido de hoje. Nome e telefone do cliente também são copiados no pedido.
-8. Incrementa o contador e confirma a transação. Se algo falhar, o contador e as gravações são desfeitos juntos.
-9. Só então devolve número, total e link `wa.me`. A tela mostra confirmação e tenta abrir a conversa; oferece também um link para o caso de bloqueio de janelas.
-10. O pedido já aparece no painel, mesmo que o cliente não envie a mensagem no WhatsApp. A loja confere e confirma o atendimento.
+`services/billing.js` centraliza a expressão SQL do estado efetivo usando a data em America/Sao_Paulo. A mesma expressão é usada na leitura online e na conciliação. Ordem de precedência: cancelamento, suspensão manual, suspensão automática por atraso, atraso, pendência, avaliação/ativo. Situação administrativa `suspended` ou `archived` também bloqueia.
 
-## Login e pedidos no painel
+A rotina obtém advisory lock de sessão no PostgreSQL, registra início, bloqueia/atualiza assinaturas em transação e grava transições de auditoria. Sobreposição retorna `skipped`; eventos e lembretes por tenant/vencimento não são duplicados. Falha de processo libera o lock; execução incompleta permanece identificável e pode ser reprocessada. Logs não contêm tokens, senha ou payload de pedidos.
 
-A senha é comparada com o hash bcrypt, nunca com texto puro guardado no banco. O JWT assinado fica em um cookie httpOnly: o JavaScript da tela não lê esse cookie. Cada requisição autenticada valida a assinatura e confirma que o usuário continua pertencendo àquela loja.
+Servidor executa no início e a cada 15 minutos; CLI `billing:run`, painel e timer systemd permitem reprocessamento. Reinicializações não anulam o bloqueio, porque o acesso consulta a política em tempo real.
 
-O painel busca pedidos e os separa por status com filtros. Cada mudança trava o pedido dentro de uma transação, valida a sequência e grava um evento no histórico. Não é possível ir de “Pendente” direto para “Concluído”.
+Pagamento manual exige confirmação explícita, data não futura, valor de quitação, referência única por tenant e próximo vencimento posterior ao atual e a hoje. Transação bloqueia loja e assinatura, grava recebimento, avança vencimento e audita. Suspensões manuais não são retiradas implicitamente. Não há cobrança automática, parcelas, estorno ou cartão armazenado. Nenhum gateway foi simulado; a tabela de recebimentos e o serviço são a fronteira para um futuro adaptador que só confirme eventos verificados.
 
-## Segurança e dados pessoais
+Lembretes são uma outbox com chave única `(estabelecimento_id,vencimento)`. Sem webhook ficam pendentes. Com webhook HTTPS, o worker envia JSON com chave `Idempotency-Key`, timeout e retentativa após uma hora; o receptor precisa deduplicar. Falha entre entrega e confirmação no banco pode repetir a entrega: garantia de pelo menos uma vez. Status "entregue ao provedor" não comprova envio/leitura no WhatsApp ou e-mail. Lembretes de vencimentos já quitados não são enviados.
 
-O backend valida entradas com Zod e limita tamanho de JSON, imagens e textos. Comandos SQL recebem valores separados do texto da consulta. As poucas partes variáveis do texto SQL (nomes de tabelas e campos do CRUD) vêm de listas fixas do servidor.
+## Pedido
 
-A interface cria elementos com `createElement` e preenche textos com `textContent`. Conteúdo de cliente ou loja não é inserido como HTML. O servidor aplica Helmet, política de conteúdo e rejeita origens externas. O login e a criação de pedidos têm limite de tentativas.
+1. O slug resolve a loja; o backend bloqueia assinatura inválida e loja fechada.
+2. Uma transação trava a linha do estabelecimento. Lojas diferentes continuam concorrentes.
+3. UUID de idempotência, quando fornecido, identifica a tentativa. Uma repetição com mesmo corpo retorna a resposta persistida; corpo divergente retorna 409. A tela conserva a chave após falha de rede. Clientes antigos sem chave ainda podem criar pedidos, sem essa garantia.
+4. Catálogo ativo, grupos, limites e adicionais são validados; preços, taxa, troco e total são calculados em centavos no servidor. Retirada tem taxa zero.
+5. Cliente, pedido, itens, adicionais, primeiro status e contador são gravados juntos. Nomes, contatos e preços são snapshots históricos.
+6. A resposta e o hash da requisição ficam na mesma transação. Só depois do commit a tela abre `wa.me` com a mensagem completa, incluindo subtotal.
+7. Fechar o navegador não remove o pedido. O painel consulta o banco e mantém o fluxo de status existente.
 
-Coletamos nome, telefone e endereço quando há entrega. A informação fica nos pedidos para o atendimento e histórico. A loja deve estabelecer prazo de retenção apropriado e atender solicitações de privacidade. O operador pode anonimizar dados com uma rotina administrativa controlada; esta versão não tem uma tela de gestão LGPD. Não há coleta de número de cartão nem processamento de pagamento.
+Não há integração oficial do WhatsApp, confirmação bancária do consumidor ou processamento de cartão.
 
-O botão aberto/fechado é manual. O campo de horários é um texto informativo, sem agenda automática. Valores do dashboard representam pedidos não cancelados, não uma conciliação financeira.
+## Interface e persistência
+
+`frontend/superadmin` contém a administração comercial; `frontend/admin` mantém o painel da loja; `frontend/cardapio` mantém compra e checkout; a home apresenta recursos, demos, planos reais do banco e formulário de interesse. Conteúdo variável usa `textContent`.
+
+Uploads usam UUID. sharp decodifica PNG/JPEG/WebP, limita pixels e dimensões e recodifica WebP sem metadados. Não aceita SVG/HTML. Desenvolvimento usa `UPLOAD_DIR`; produção exige `IMAGE_STORAGE=cloudinary`. O backend armazena bytes como assets raw sem sobrescrita e verifica a leitura antes de confirmar sucesso. A rota `/uploads/:name` entrega o conteúdo pela mesma origem, preservando referências, validação e CSP. Não há fallback para disco em produção. Backup exporta todos os assets do prefixo Cloudinary, inclusive os ainda sem referência; restauração exige destinos vazios e hashes válidos.
+
+A topologia inicial é uma instância Node, PostgreSQL persistente com conexão direta e Cloudinary. Rate limits ficam em memória. Migrations têm transação e advisory lock; a cobrança também usa trava de sessão, incompatível com PgBouncer transacional. Migrations não são executadas pelo deploy. Configuração de domínio, TLS, proxy e alertas é descrita em [PUBLICACAO.md](PUBLICACAO.md).

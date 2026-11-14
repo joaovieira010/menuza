@@ -1,0 +1,12 @@
+[Unit]
+Description=Backup diário Menuza (banco e uploads)
+[Service]
+Type=oneshot
+User=menuza
+Group=menuza
+WorkingDirectory=/opt/menuza
+EnvironmentFile=/etc/menuza.env
+Environment=BACKUP_DIR=/var/lib/menuza/backups
+ExecStart=/usr/bin/node scripts/backup.cjs
+UMask=0077
+NoNewPrivileges=true

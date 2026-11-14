@@ -3,5 +3,12 @@ node_modules/
 backend/.env
 backend/uploads/
 coverage/
+.local/
 *.log
 .playwright/
+
+# Cópias locais de configuração também contêm segredos.
+.env.*
+!.env.example
+backend/.env.*
+!backend/.env.example

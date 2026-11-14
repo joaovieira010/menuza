@@ -1,0 +1,13 @@
+.git
+.local
+node_modules
+backend/.env
+backend/.env.*
+.env
+.env.*
+backend/uploads
+coverage
+*.log
+.agents
+.codex
+.aws

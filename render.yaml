@@ -1,0 +1,37 @@
+# Piloto gratuito: Neon direto e Cloudinary provisionados separadamente.
+# Nenhuma migration ou seed é executada pelo deploy.
+services:
+  - type: web
+    name: menuza
+    runtime: node
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 24.13.0
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: APP_ORIGIN
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: IMAGE_STORAGE
+        value: cloudinary
+      - key: BILLING_ENABLED
+        value: "false"
+      - key: TRUST_PROXY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: CLOUDINARY_PREFIX
+        value: menuza

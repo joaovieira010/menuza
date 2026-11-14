@@ -128,6 +128,10 @@ function showStore() {
     image(s.logo_url, "Logo de " + s.nome, "logo"),
     copy,
   );
+  if (s.banner_url)
+    $("#store").before(
+      image(s.banner_url, "Banner de " + s.nome, "store-banner"),
+    );
   if (!s.aberto)
     notice(
       "A loja está fechada. Você pode consultar o cardápio e preparar seu carrinho.",
@@ -409,10 +413,25 @@ form.addEventListener("submit", async (event) => {
       },
       itens: cart,
     };
+    // Repetir após falha de rede conserva a mesma chave e não duplica a gravação.
+    const payload = JSON.stringify(data);
+    let pending;
+    try {
+      pending = JSON.parse(sessionStorage.getItem(key + ":pending") || "null");
+    } catch {}
+    if (!pending || pending.payload !== payload)
+      pending = { payload, id: crypto.randomUUID() };
+    try {
+      sessionStorage.setItem(key + ":pending", JSON.stringify(pending));
+    } catch {}
+    data.idempotencia = pending.id;
     const order = await api(
       encodeURIComponent(slug) + "/pedidos",
       send("POST", data),
     );
+    try {
+      sessionStorage.removeItem(key + ":pending");
+    } catch {}
     cart = [];
     persist();
     form.hidden = true;
@@ -481,6 +500,19 @@ try {
   renderProducts();
   updateCart();
 } catch (e) {
-  $("#store").replaceChildren(el("h1", "Não foi possível abrir o cardápio"));
-  notice(e.message);
+  document.title =
+    e.status === 423
+      ? "Estabelecimento indisponível • Menuza"
+      : "Cardápio indisponível • Menuza";
+  $(".menu-main").replaceChildren(
+    el(
+      "h1",
+      e.status === 423
+        ? "Estabelecimento temporariamente indisponível"
+        : "Cardápio não encontrado",
+    ),
+    el("p", e.message),
+  );
+  $("#store").replaceChildren(el("p", "Menuza · Cardápios digitais"));
+  $("#cart-open").hidden = true;
 }

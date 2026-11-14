@@ -1,0 +1,9 @@
+[Unit]
+Description=Agendamento do backup Menuza
+[Timer]
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+RandomizedDelaySec=600
+Unit=menuza-backup.service
+[Install]
+WantedBy=timers.target

@@ -76,9 +76,10 @@ export function decimalToCents(value) {
   return Number(whole) * 100 + Number(dec.padEnd(2, "0"));
 }
 export const statuses = {
-  pendente: "Pendente",
-  confirmado: "Confirmado",
+  pendente: "Aguardando confirmação",
+  confirmado: "Pedido recebido",
   em_preparacao: "Em preparação",
+  pronto: "Pedido pronto",
   saiu_para_entrega: "Saiu para entrega",
   concluido: "Concluído",
   cancelado: "Cancelado",

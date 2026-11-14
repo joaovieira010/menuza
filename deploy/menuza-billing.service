@@ -1,0 +1,10 @@
+[Unit]
+Description=Reprocessar cobranças Menuza
+[Service]
+Type=oneshot
+User=menuza
+Group=menuza
+WorkingDirectory=/opt/menuza
+EnvironmentFile=/etc/menuza.env
+ExecStart=/usr/bin/node backend/src/services/billing.js
+NoNewPrivileges=true

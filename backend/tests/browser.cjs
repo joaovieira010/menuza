@@ -99,23 +99,21 @@ async function main() {
     });
     await admin.getByRole("button", { name: "Pedidos", exact: true }).click();
     const number = "#" + String(order.numero).padStart(6, "0");
-    let card = admin
-      .locator("article")
-      .filter({
-        has: admin.getByRole("heading", { name: number, exact: true }),
-      });
+    let card = admin.locator("article").filter({
+      has: admin.getByRole("heading", { name: number, exact: true }),
+    });
     await card.waitFor();
-    for (const name of [
-      "Confirmado →",
-      "Em preparação →",
-      "Saiu para entrega →",
-      "Concluído →",
+    for (const [name, status] of [
+      ["Confirmar recebimento", "Pedido recebido"],
+      ["Iniciar preparação", "Em preparação"],
+      ["Pedido pronto", "Pedido pronto"],
+      ["Saiu para entrega", "Saiu para entrega"],
+      ["Concluir pedido", "Concluído"],
     ]) {
       await card.getByRole("button", { name, exact: true }).click();
-      // A mensagem de sucesso pode ser a da etapa anterior: aguarde o status deste pedido.
       await card
         .locator(".badge")
-        .filter({ hasText: new RegExp("^" + name.replace(" →", "") + "$") })
+        .filter({ hasText: new RegExp("^" + status + "$") })
         .waitFor();
     }
     assert.equal(await card.locator(".badge").textContent(), "Concluído");
@@ -129,27 +127,25 @@ async function main() {
       .getByLabel("Nome", { exact: true })
       .fill("Produto QA navegador");
     await editor.getByLabel("Preço em reais (ex.: 28,90)").fill("12,50");
-    await editor
-      .locator("input[type=file]")
-      .setInputFiles({
-        name: "qa.png",
-        mimeType: "image/png",
-        buffer: Buffer.from(
-          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aRfoAAAAASUVORK5CYII=",
-          "base64",
-        ),
-      });
+    await editor.locator("input[type=file]").setInputFiles({
+      name: "qa.png",
+      mimeType: "image/png",
+      // Fixture decodificável; o PNG antigo tinha assinatura válida, mas conteúdo inválido.
+      buffer: await require("sharp")({
+        create: { width: 8, height: 8, channels: 3, background: "#7f3aed" },
+      })
+        .png()
+        .toBuffer(),
+    });
     await editor.getByText("Imagem enviada. Salve para aplicar.").waitFor();
     await editor.getByRole("button", { name: "Salvar", exact: true }).click();
     await admin
       .getByRole("status")
       .filter({ hasText: "Alterações salvas." })
       .waitFor();
-    const product = admin
-      .locator(".record")
-      .filter({
-        has: admin.getByText("Produto QA navegador", { exact: true }),
-      });
+    const product = admin.locator(".record").filter({
+      has: admin.getByText("Produto QA navegador", { exact: true }),
+    });
     await product.getByRole("button", { name: "Editar", exact: true }).click();
     await editor
       .getByLabel("Nome", { exact: true })

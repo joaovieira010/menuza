@@ -1,5 +1,15 @@
 async function catalog(db, loja, admin = false) {
   const tid = loja.id;
+  let extrasEnabled = true;
+  if (!admin) {
+    const {
+      rows: [plan],
+    } = await db.query(
+      "SELECT p.adicionais FROM assinaturas a JOIN planos p ON p.id=a.plano_id WHERE a.estabelecimento_id=$1",
+      [tid],
+    );
+    extrasEnabled = plan?.adicionais ?? false;
+  }
   const { rows: categorias } = await db.query(
     `SELECT * FROM categorias WHERE estabelecimento_id=$1 ${admin ? "" : "AND ativo=true"} ORDER BY ordem,id`,
     [tid],
@@ -19,11 +29,24 @@ async function catalog(db, loja, admin = false) {
   for (const g of grupos)
     g.adicionais = adicionais.filter((a) => a.grupo_id === g.id);
   for (const p of produtos)
-    p.grupos = grupos.filter(
+    p.grupos = (extrasEnabled ? grupos : []).filter(
       (g) => g.produto_id === p.id || g.categoria_id === p.categoria_id,
     );
   // O contador é interno e nunca deve ser enviado ao cliente.
-  const { proximo_numero, ...publicLoja } = loja;
+  const fields = [
+    "id",
+    "nome",
+    "slug",
+    "logo_url",
+    "banner_url",
+    "descricao",
+    "whatsapp",
+    "taxa_entrega",
+    "aberto",
+    "horarios",
+    "cor_principal",
+  ];
+  const publicLoja = Object.fromEntries(fields.map((k) => [k, loja[k]]));
   return {
     loja: publicLoja,
     categorias,

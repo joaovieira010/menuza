@@ -114,6 +114,14 @@ async function seed(db = pool, password = process.env.SEED_ADMIN_PASSWORD) {
         ],
       );
       await client.query(
+        "UPDATE estabelecimentos SET demonstracao=true,cor_principal='#7f3aed' WHERE id=$1",
+        [s.id],
+      );
+      await client.query(
+        "INSERT INTO assinaturas(estabelecimento_id,plano_id,valor,vencimento,status) SELECT $1,id,preco,(now() AT TIME ZONE 'America/Sao_Paulo')::date+14,'trialing' FROM planos WHERE nome='Básico'",
+        [s.id],
+      );
+      await client.query(
         "INSERT INTO usuarios(estabelecimento_id,email,senha_hash) VALUES($1,$2,$3)",
         [s.id, loja.email, hash],
       );

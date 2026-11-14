@@ -1,0 +1,5 @@
+# Defina MENUZA_DOMAIN no ambiente do Caddy. HTTPS automático exige DNS apontando para o host.
+{$MENUZA_DOMAIN} {
+    encode zstd gzip
+    reverse_proxy 127.0.0.1:3000
+}

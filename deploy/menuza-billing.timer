@@ -1,0 +1,8 @@
+[Unit]
+Description=Verificação redundante de cobranças Menuza
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=15min
+Persistent=true
+[Install]
+WantedBy=timers.target

@@ -3,27 +3,255 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Menuza • Seu negócio, à mesa</title>
+    <meta
+      name="description"
+      content="Cardápio digital e pedidos organizados para pequenos negócios. Conheça a Menuza."
+    />
+    <title>Menuza • Seu cardápio. Seus pedidos. Seu jeito.</title>
     <link rel="stylesheet" href="/assets/cardapio/css/style.css" />
+    <link rel="stylesheet" href="/assets/marketing.css" />
     <script type="module" src="/assets/home.js"></script>
   </head>
   <body>
-    <main class="welcome">
+    <header class="site-nav">
       <a class="brand" href="/">menuza<span>●</span></a>
-      <p class="eyebrow">CARDÁPIO DIGITAL · PEDIDOS SIMPLES</p>
-      <h1>Seu próximo pedido<br />começa por aqui.</h1>
-      <p>Recebeu o link de uma loja? Informe o endereço do cardápio abaixo.</p>
-      <form id="open-menu">
-        <label for="slug">Endereço do cardápio</label
-        ><input
-          id="slug"
-          placeholder="nome-da-loja"
-          required
-          pattern="[a-z0-9-]+"
-          maxlength="80"
-        /><button class="primary">Abrir cardápio →</button>
-      </form>
-      <a href="/admin">Acessar meu painel</a>
+      <nav aria-label="Principal">
+        <a href="#recursos">Recursos</a><a href="#planos">Planos</a
+        ><a href="/admin">Entrar</a>
+      </nav>
+    </header>
+    <main>
+      <section class="hero">
+        <div>
+          <p class="eyebrow">PARA QUEM COLOCA A MÃO NA MASSA</p>
+          <h1>Seu negócio merece<br />um cardápio à altura.</h1>
+          <p class="hero-copy">
+            Deixe seus produtos fáceis de escolher e seus pedidos fáceis de
+            cuidar. Mais organização para você. Mais praticidade para seus
+            clientes.
+          </p>
+          <div class="cta-row">
+            <a class="primary" href="#contato">Quero a Menuza →</a>
+          </div>
+          <p class="muted">
+            Feito para hamburguerias, docerias, marmitarias e pequenos
+            restaurantes.
+          </p>
+        </div>
+        <aside
+          class="hero-preview"
+          aria-label="Exemplo de organização dos pedidos"
+        >
+          <span class="badge">SEU DIA MAIS ORGANIZADO</span>
+          <h2>Do primeiro clique<br />ao pedido pronto.</h2>
+          <div class="preview-row">
+            <span>01 · Cardápio</span><strong>Com a cara da sua loja</strong>
+          </div>
+          <div class="preview-row">
+            <span>02 · Pedido</span
+            ><strong>Produtos, adicionais e observações</strong>
+          </div>
+          <div class="preview-row">
+            <span>03 · Painel</span><strong>Tudo no lugar certo</strong>
+          </div>
+          <p>
+            Seu cliente escolhe. A Menuza organiza.<br />Você cuida do sabor.
+          </p>
+        </aside>
+      </section>
+      <section id="recursos" class="site-section">
+        <p class="eyebrow">MENOS CONFUSÃO. MAIS PEDIDOS BEM CUIDADOS.</p>
+        <h2>O essencial para o seu negócio.</h2>
+        <div class="feature-grid">
+          <article>
+            <span>01</span>
+            <h3>Um link só seu</h3>
+            <p>
+              Cardápio com busca, categorias, fotos, logo e cores da sua marca,
+              pronto para compartilhar.
+            </p>
+          </article>
+          <article>
+            <span>02</span>
+            <h3>Pedidos organizados</h3>
+            <p>
+              Entrega ou retirada, adicionais e total conferido pelo sistema.
+              Histórico e acompanhamento de status no painel.
+            </p>
+          </article>
+          <article>
+            <span>03</span>
+            <h3>Conversa no WhatsApp</h3>
+            <p>
+              O pedido fica salvo e gera uma mensagem pronta. O cliente abre a
+              conversa e envia para a loja.
+            </p>
+          </article>
+        </div>
+      </section>
+      <section class="site-section tinted">
+        <p class="eyebrow">COMO FUNCIONA</p>
+        <h2>Seu cardápio no ar em três passos.</h2>
+        <ol class="steps">
+          <li>
+            <strong>Conte sobre seu negócio.</strong>
+            <p>Combinamos o plano e criamos seu acesso.</p>
+          </li>
+          <li>
+            <strong>Prepare sua vitrine.</strong>
+            <p>
+              Cadastre produtos, fotos, preços, WhatsApp e entrega pelo painel.
+            </p>
+          </li>
+          <li>
+            <strong>Compartilhe e atenda.</strong>
+            <p>
+              Abra a loja e envie seu link para os clientes. Os pedidos aparecem
+              no painel.
+            </p>
+          </li>
+        </ol>
+      </section>
+      <section id="planos" class="site-section">
+        <p class="eyebrow">PLANOS MENSAIS</p>
+        <h2>Escolha o próximo passo.</h2>
+        <div id="plans" class="feature-grid" aria-live="polite">
+          <p>Carregando planos…</p>
+        </div>
+        <p class="muted">
+          Contratação com atendimento. Mensalidade por PIX com confirmação
+          manual. Não processamos cartões na plataforma.
+        </p>
+      </section>
+      <section class="site-section tinted">
+        <h2>Antes de começar.</h2>
+        <details>
+          <summary>Preciso instalar um aplicativo?</summary>
+          <p>
+            Não. O cardápio e o painel funcionam no navegador do celular, tablet
+            ou computador.
+          </p>
+        </details>
+        <details>
+          <summary>
+            A Menuza envia o pedido automaticamente pelo WhatsApp?
+          </summary>
+          <p>
+            O pedido é salvo no painel e gera um link de conversa com a mensagem
+            preenchida. O cliente precisa enviá-la. Não há integração com a API
+            oficial do WhatsApp.
+          </p>
+        </details>
+        <details>
+          <summary>Recebo o pagamento dos pedidos pela Menuza?</summary>
+          <p>
+            O consumidor indica a forma de pagamento e combina o recebimento
+            diretamente com a loja. A plataforma não cobra esse pagamento.
+          </p>
+        </details>
+        <details>
+          <summary>
+            Posso mudar meus produtos e minha identidade visual?
+          </summary>
+          <p>
+            Sim, pelo painel da sua loja. Limites e recursos dependem do plano
+            contratado.
+          </p>
+        </details>
+        <details>
+          <summary>E se minha assinatura vencer?</summary>
+          <p>
+            O acesso pode ser suspenso conforme a política de cobrança do
+            contrato. Produtos e histórico de pedidos são preservados.
+          </p>
+        </details>
+      </section>
+      <section id="contato" class="site-section contact">
+        <div>
+          <p class="eyebrow">VAMOS CONVERSAR</p>
+          <h2>Pronto para organizar<br />seus próximos pedidos?</h2>
+          <p>
+            Preencha seus dados para conversar com a Menuza pelo WhatsApp. A
+            mensagem ficará pronta para você conferir e enviar.
+          </p>
+        </div>
+        <form id="contact">
+          <label
+            >Seu nome<input
+              name="nome"
+              required
+              minlength="2"
+              maxlength="120"
+              autocomplete="name" /></label
+          ><label
+            >Nome do negócio<input
+              name="estabelecimento"
+              required
+              minlength="2"
+              maxlength="120" /></label
+          ><label
+            >Tipo de negócio<input
+              name="tipo_negocio"
+              maxlength="120"
+              placeholder="Ex.: doceria, restaurante" /></label
+          ><label
+            >Cidade<input
+              name="cidade"
+              maxlength="120"
+              autocomplete="address-level2" /></label
+          ><label
+            >E-mail<input
+              name="email"
+              type="email"
+              required
+              maxlength="254"
+              autocomplete="email" /></label
+          ><label
+            >Telefone com DDD<input
+              name="telefone"
+              type="tel"
+              required
+              minlength="10"
+              maxlength="30"
+              autocomplete="tel" /></label
+          ><label
+            >O que você precisa?<textarea
+              name="mensagem"
+              maxlength="1000"
+            ></textarea></label
+          ><label class="consent"
+            ><input name="consentimento" type="checkbox" required />Autorizo o
+            uso destes dados para contato sobre a Menuza.</label
+          ><button class="primary" type="submit">
+            Conversar no WhatsApp →
+          </button>
+          <p id="contact-result" role="status"></p>
+          <p class="help">
+            Os dados ficam disponíveis somente para a administração da Menuza
+            para responder à sua solicitação. Solicite exclusão pelo mesmo
+            atendimento.
+          </p>
+        </form>
+      </section>
+      <section class="site-section">
+        <form id="open-menu">
+          <label for="slug">Já tem um endereço de loja?</label>
+          <div class="cta-row">
+            <input
+              id="slug"
+              placeholder="nome-da-loja"
+              required
+              pattern="[a-z0-9]+(-[a-z0-9]+)*"
+              maxlength="80"
+            /><button>Abrir cardápio →</button>
+          </div>
+        </form>
+      </section>
     </main>
+    <footer class="site-footer">
+      <a class="brand" href="/">menuza<span>●</span></a
+      ><span>Cardápios digitais. Negócios de verdade.</span
+      ><a href="/admin">Painel da loja</a>
+    </footer>
   </body>
 </html>

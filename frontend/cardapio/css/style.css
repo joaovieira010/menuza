@@ -1,10 +1,10 @@
 :root {
-  --cor-principal: #c2410c;
-  --cor-escura: #7c2d12;
-  --cor-fundo: #fffbf5;
-  --cor-texto: #1c1917;
-  --border: #e7ded4;
-  --muted: #6b6058;
+  --cor-principal: #7f3aed;
+  --cor-escura: #32125c;
+  --cor-fundo: #faf9fc;
+  --cor-texto: #18171c;
+  --border: #e6e1ed;
+  --muted: #666172;
   --on-brand: #fff;
 }
 * {
@@ -58,7 +58,7 @@ select,
 textarea {
   width: 100%;
   padding: 12px 14px;
-  border: 1px solid #c6b9ae;
+  border: 1px solid #c7bfd2;
   border-radius: 10px;
   background: #fff;
   color: var(--cor-texto);
@@ -132,7 +132,7 @@ h3 {
   color: inherit;
 }
 .brand span {
-  color: #fb923c;
+  color: #b798f5;
   font-size: 12px;
   margin-left: 3px;
 }
@@ -169,7 +169,7 @@ h3 {
   max-width: 680px;
 }
 .store-copy p {
-  color: #fce8da;
+  color: #e9e1f5;
   margin-bottom: 14px;
 }
 .badge {
@@ -263,7 +263,7 @@ nav button.ativa {
 }
 .category-heading span {
   font-size: 12px;
-  background: #f2e7dc;
+  background: #f0ebf8;
   padding: 3px 10px;
   border-radius: 20px;
 }
@@ -283,12 +283,12 @@ nav button.ativa {
   border-radius: 18px;
   padding: 18px;
   min-height: 165px;
-  box-shadow: 0 3px 10px #7c2d1204;
+  box-shadow: 0 3px 10px #32125c04;
   align-items: center;
   font-weight: 400;
 }
 .product-card:hover {
-  border-color: #c2410c88;
+  border-color: #7f3aed88;
   transform: translateY(-1px);
 }
 .product-card p {
@@ -353,7 +353,7 @@ footer {
   background: var(--cor-principal);
   color: var(--on-brand);
   border: 0;
-  box-shadow: 0 10px 30px #7c2d1240;
+  box-shadow: 0 10px 30px #32125c40;
   border-radius: 16px;
   padding: 17px 22px;
   z-index: 4;
@@ -376,7 +376,7 @@ dialog {
   background: var(--cor-fundo);
 }
 dialog::backdrop {
-  background: #1c191799;
+  background: #18171c99;
   backdrop-filter: blur(3px);
 }
 .dialog-head {
@@ -460,7 +460,7 @@ dialog::backdrop {
 .totals {
   margin: 20px 0;
   padding: 18px;
-  background: #f4eade;
+  background: #f0ebf8;
   border-radius: 12px;
 }
 .total-row {
@@ -473,7 +473,7 @@ dialog::backdrop {
   font-weight: 750;
   font-size: 20px;
   padding-top: 10px;
-  border-top: 1px solid #ddcbb8;
+  border-top: 1px solid #d9d0e6;
 }
 fieldset {
   border: 0;
@@ -620,5 +620,20 @@ textarea:focus-visible {
   padding: 15px;
   border: 1px solid var(--border);
   border-radius: 12px;
+  overflow-wrap: anywhere;
+}
+
+.store-banner {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+  border-radius: 16px;
+  margin: 20px auto;
+}
+body {
+  overflow-wrap: break-word;
+}
+dialog {
   overflow-wrap: anywhere;
 }

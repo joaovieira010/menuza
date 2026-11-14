@@ -1,3 +1,4 @@
+const { whatsappUrl } = require("./whatsapp");
 const catalog = require("./catalog");
 const brl = (v) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
@@ -47,21 +48,36 @@ function calculate(data, menu) {
 function message(loja, data, order) {
   const e = data.endereco;
   return [
-    `NOVO PEDIDO — ${loja.nome}`,
-    `PEDIDO Nº ${String(order.numero).padStart(6, "0")}`,
-    `CLIENTE: ${data.cliente.nome} / ${data.cliente.telefone}`,
-    `ENDEREÇO: ${data.modalidade === "retirada" ? "Retirada no estabelecimento" : [e.rua, e.numero, e.bairro, e.complemento, e.referencia].filter(Boolean).join(", ")}`,
-    "PRODUTOS: " +
-      order.itens
-        .map(
-          (i) =>
-            `${i.quantidade}x ${i.nome} — ${brl(i.unit * i.quantidade)}${i.extras.length ? " (" + i.extras.map((a) => a.nome + " + " + brl(a.preco)).join(", ") + ")" : ""}${i.observacao ? " / Obs.: " + i.observacao : ""}`,
-        )
-        .join("\n"),
-    `PAGAMENTO: ${data.forma_pagamento}${data.troco_para !== null ? " | TROCO: " + brl(data.troco_para - order.total) + " (para " + brl(data.troco_para) + ")" : ""}`,
-    `TAXA DE ENTREGA: ${brl(order.taxa_entrega)}`,
-    `TOTAL: ${brl(order.total)}`,
-    `OBSERVAÇÕES: ${data.observacoes || "Nenhuma"}`,
+    `🔔 NOVO PEDIDO #${String(order.numero).padStart(6, "0")}`,
+    "",
+    `Cliente: ${data.cliente.nome} - ${data.cliente.telefone}`,
+    "",
+    "Itens:",
+    ...order.itens.map(
+      (i) =>
+        `${i.quantidade}x ${i.nome}${i.extras.length ? " (" + i.extras.map((a) => a.nome).join(", ") + ")" : ""} — ${brl(i.unit * i.quantidade)}${i.observacao ? " / Obs.: " + i.observacao : ""}`,
+    ),
+    "",
+    `Subtotal: ${brl(order.subtotal)}`,
+    ...(data.modalidade === "entrega"
+      ? [`Taxa de Entrega: ${brl(order.taxa_entrega)}`]
+      : []),
+    `Total: ${brl(order.total)}`,
+    "",
+    `Tipo de Entrega: ${data.modalidade === "entrega" ? "Entrega em domicílio" : "Retirada no estabelecimento"}`,
+    "",
+    data.modalidade === "entrega"
+      ? `Endereço: ${[e.rua, e.numero, e.bairro, e.complemento, e.referencia].filter(Boolean).join(", ")}`
+      : `Retirada: No estabelecimento ${loja.nome}`,
+    "",
+    `Forma de Pagamento: ${{ dinheiro: "Dinheiro", pix: "Pix", cartao: "Cartão" }[data.forma_pagamento]}`,
+    ...(data.troco_para != null
+      ? [
+          `Troco: ${brl(data.troco_para - order.total)} (para ${brl(data.troco_para)})`,
+        ]
+      : []),
+    "",
+    `Observações: ${data.observacoes || "Nenhuma"}`,
   ].join("\n");
 }
 async function createOrder(pool, slug, data) {
@@ -76,6 +92,43 @@ async function createOrder(pool, slug, data) {
       [slug],
     );
     if (!loja) fail("Estabelecimento não encontrado.", 404);
+    const subscription = await require("./billing").assertAccess(c, loja.id);
+    const fingerprint = require("node:crypto")
+      .createHash("sha256")
+      .update(JSON.stringify(data))
+      .digest("hex");
+    if (data.idempotencia) {
+      const {
+        rows: [previous],
+      } = await c.query(
+        "SELECT requisicao_hash,resposta FROM pedidos WHERE estabelecimento_id=$1 AND idempotencia=$2",
+        [loja.id, data.idempotencia],
+      );
+      if (previous) {
+        if (previous.requisicao_hash !== fingerprint)
+          fail(
+            "A tentativa anterior tem outros dados. Confira o pedido antes de reenviar.",
+            409,
+          );
+        await c.query("COMMIT");
+        return previous.resposta;
+      }
+    }
+    if (subscription.limite_pedidos_mes) {
+      const {
+        rows: [count],
+      } = await c.query(
+        "SELECT count(*)::int AS n FROM pedidos WHERE estabelecimento_id=$1 AND date_trunc('month',criado_em AT TIME ZONE 'America/Sao_Paulo')=date_trunc('month',now() AT TIME ZONE 'America/Sao_Paulo')",
+        [loja.id],
+      );
+      if (count.n >= subscription.limite_pedidos_mes)
+        fail(
+          "Limite mensal de pedidos atingido. Contate o estabelecimento.",
+          409,
+        );
+    }
+    if (!subscription.adicionais && data.itens.some((i) => i.adicionais.length))
+      fail("Adicionais não disponíveis no plano atual.");
     if (!loja.aberto) fail("Este estabelecimento está fechado.");
     const result = calculate(data, await catalog(c, loja));
     const {
@@ -140,14 +193,20 @@ async function createOrder(pool, slug, data) {
       [loja.id, pedido.id, "pendente"],
     );
     const mensagem = message(loja, data, { ...result, numero });
-    await c.query("COMMIT");
-    return {
+    const response = {
       id: pedido.id,
       numero,
       total: result.total,
       mensagem,
-      whatsapp_url: `https://wa.me/${loja.whatsapp}?text=${encodeURIComponent(mensagem)}`,
+      whatsapp_url: whatsappUrl(loja.whatsapp, mensagem),
     };
+    if (data.idempotencia)
+      await c.query(
+        "UPDATE pedidos SET idempotencia=$2,requisicao_hash=$3,resposta=$4 WHERE id=$1",
+        [pedido.id, data.idempotencia, fingerprint, JSON.stringify(response)],
+      );
+    await c.query("COMMIT");
+    return response;
   } catch (err) {
     await c.query("ROLLBACK");
     throw err;
@@ -155,4 +214,22 @@ async function createOrder(pool, slug, data) {
     c.release();
   }
 }
-module.exports = { calculate, createOrder, message, fail };
+function savedMessage(loja, p) {
+  return message(
+    loja,
+    {
+      ...p,
+      cliente: { nome: p.cliente_nome, telefone: p.cliente_telefone },
+      endereco: { ...p, numero: p.numero_endereco },
+    },
+    {
+      ...p,
+      itens: p.itens.map((i) => ({
+        ...i,
+        extras: i.adicionais,
+        unit: i.preco + i.adicionais.reduce((sum, a) => sum + a.preco, 0),
+      })),
+    },
+  );
+}
+module.exports = { calculate, createOrder, message, savedMessage, fail };

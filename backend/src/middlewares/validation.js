@@ -6,18 +6,22 @@ const slug = z
   .string()
   .min(1)
   .max(80)
-  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+  .regex(
+    /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+    "Endereço deve conter letras minúsculas, números e hífens entre palavras",
+  );
 const text = (max = 120) => z.string().trim().min(1).max(max);
 const optional = (max = 1000) => z.string().trim().max(max).default("");
 const money = z.number().int().min(0).max(10000000);
-const phone = z
-  .string()
-  .transform((v) => v.replace(/[\s()+.-]/g, ""))
-  .refine(
-    (v) => /^(55)?[1-9][0-9](?:9[0-9]{8}|[2-5][0-9]{7})$/.test(v),
-    "Telefone brasileiro inválido",
-  )
-  .transform((v) => (v.startsWith("55") && v.length >= 12 ? v : "55" + v));
+const { normalizePhone } = require("../services/whatsapp");
+const phone = z.string().transform((value, ctx) => {
+  try {
+    return normalizePhone(value);
+  } catch {
+    ctx.addIssue({ code: "custom", message: "Telefone brasileiro inválido" });
+    return z.NEVER;
+  }
+});
 const image = z
   .string()
   .max(500)
@@ -29,13 +33,19 @@ const image = z
 const schemas = {
   login: z.object({
     email: z
-      .email()
+      .string()
+      .trim()
       .max(254)
+      .pipe(z.email())
       .transform((s) => s.toLowerCase()),
-    senha: text(72).refine(
-      (v) => Buffer.byteLength(v, "utf8") <= 72,
-      "Senha deve ter até 72 bytes",
-    ),
+    senha: z
+      .string()
+      .min(1)
+      .max(72)
+      .refine(
+        (v) => Buffer.byteLength(v, "utf8") <= 72,
+        "Senha deve ter até 72 bytes",
+      ),
   }),
   categoria: z.object({
     nome: text(),
@@ -73,6 +83,7 @@ const schemas = {
     nome: text(),
     descricao: optional(),
     logo_url: image,
+    banner_url: image,
     whatsapp: phone,
     taxa_entrega: money,
     aberto: z.boolean(),
@@ -81,6 +92,7 @@ const schemas = {
   }),
   pedido: z
     .object({
+      idempotencia: z.uuid().optional(),
       cliente: z.object({ nome: text(), telefone: phone }),
       modalidade: z.enum(["entrega", "retirada"]),
       forma_pagamento: z.enum(["dinheiro", "pix", "cartao"]),
@@ -129,9 +141,11 @@ const schemas = {
         });
     }),
   status: z.object({
+    status_anterior: z.string().max(30).optional(),
     status: z.enum([
       "confirmado",
       "em_preparacao",
+      "pronto",
       "saiu_para_entrega",
       "concluido",
       "cancelado",
@@ -146,6 +160,7 @@ const schemas = {
           "pendente",
           "confirmado",
           "em_preparacao",
+          "pronto",
           "saiu_para_entrega",
           "concluido",
           "cancelado",
@@ -160,10 +175,14 @@ const schemas = {
 const parse = (schema, value) => {
   const r = schema.safeParse(value);
   if (!r.success) {
-    const e = new Error(r.error.issues.map((i) => i.message).join("; "));
+    const e = new Error(
+      r.error.issues
+        .map((i) => `${i.path.join(".") || "Dados"}: ${i.message}`)
+        .join("; "),
+    );
     e.status = 400;
     throw e;
   }
   return r.data;
 };
-module.exports = { schemas, parse, id, slug };
+module.exports = { schemas, parse, id, slug, phone };

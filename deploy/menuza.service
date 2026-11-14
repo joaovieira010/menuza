@@ -1,0 +1,22 @@
+[Unit]
+Description=Menuza SaaS
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=simple
+User=menuza
+Group=menuza
+WorkingDirectory=/opt/menuza
+EnvironmentFile=/etc/menuza.env
+ExecStartPre=/usr/bin/node backend/src/database/migrate.js
+ExecStart=/usr/bin/node backend/src/server.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/menuza
+[Install]
+WantedBy=multi-user.target

@@ -22,6 +22,7 @@ const sections = {
   produtos: "Produtos",
   adicionais: "Adicionais",
   configuracoes: "Minha loja",
+  assinatura: "Minha assinatura",
 };
 const notify = (text, error = false) => {
   $("#feedback").textContent = text;
@@ -167,7 +168,37 @@ async function render() {
   view.replaceChildren();
   if (section === "dashboard") await dashboard(view);
   else if (section === "pedidos") await orderView(view);
-  else if (section === "configuracoes") settings(view);
+  else if (section === "assinatura") {
+    const s = await api("admin/assinatura"),
+      box = el("section", null, "box");
+    const names = {
+      trialing: "Em avaliação",
+      active: "Ativa",
+      pending: "Aguardando pagamento",
+      past_due: "Em atraso",
+      suspended: "Suspensa",
+      canceled: "Cancelada",
+    };
+    box.append(
+      el("h2", s.plano),
+      el("p", money(s.valor) + " por mês"),
+      el("p", "Próximo vencimento: " + String(s.vencimento).slice(0, 10)),
+      el("p", "Situação: " + names[s.efetivo]),
+      el(
+        "p",
+        "Último pagamento: " +
+          (s.ultimo_pagamento
+            ? String(s.ultimo_pagamento).slice(0, 10)
+            : "Nenhum pagamento registrado"),
+      ),
+      el(
+        "p",
+        "Para registrar o comprovante, mudar de plano ou negociar o contrato, entre em contato com o responsável pela Menuza.",
+        "help",
+      ),
+    );
+    view.append(box);
+  } else if (section === "configuracoes") settings(view);
   else if (section === "adicionais") {
     resourceView(
       view,
@@ -442,6 +473,7 @@ function settings(view) {
   field(box, "nome", "Nome da loja", "text", s.nome).maxLength = 120;
   textarea(box, "descricao", "Descrição", s.descricao);
   uploadField(box, "logo_url", "Logo", s.logo_url);
+  uploadField(box, "banner_url", "Banner", s.banner_url);
   field(box, "whatsapp", "WhatsApp com DDD e país", "tel", s.whatsapp);
   field(
     box,
@@ -471,6 +503,7 @@ function settings(view) {
           nome: f.nome,
           descricao: f.descricao,
           logo_url: f.logo_url,
+          banner_url: f.banner_url,
           whatsapp: f.whatsapp,
           taxa_entrega: decimalToCents(f.taxa_entrega),
           horarios: f.horarios,
@@ -588,31 +621,115 @@ async function orderView(view) {
         "p",
         `Pagamento: ${p.forma_pagamento}${p.troco_para !== null ? " · Troco para " + money(p.troco_para) : ""}`,
       ),
-      el("p", "Entrega: " + money(p.taxa_entrega)),
+      el(
+        "p",
+        "Tipo de entrega: " +
+          (p.modalidade === "entrega"
+            ? "Entrega em domicílio · Taxa: " + money(p.taxa_entrega)
+            : "Retirada no estabelecimento"),
+      ),
       el("div", money(p.total), "order-total"),
     );
     if (p.observacoes) card.append(el("p", "Observações: " + p.observacoes));
-    const next = {
-        pendente: "confirmado",
-        confirmado: "em_preparacao",
-        em_preparacao:
-          p.modalidade === "retirada" ? "concluido" : "saiu_para_entrega",
-        saiu_para_entrega: "concluido",
-      }[p.status],
-      actions = el("div", null, "record-actions");
+    const actions = el("div", null, "record-actions");
     const change = (status) =>
       action(async () => {
-        await api(`admin/pedidos/${p.id}/status`, send("PATCH", { status }));
-        await render();
-        notify("Status atualizado.");
+        for (const b of actions.querySelectorAll("button")) b.disabled = true;
+        try {
+          const result = await api(
+            `admin/pedidos/${p.id}/status`,
+            send("PATCH", { status, status_anterior: p.status }),
+          );
+          await render();
+          notify(
+            result.aviso ||
+              "Status atualizado. Abra o WhatsApp e confirme o envio ao cliente.",
+          );
+        } finally {
+          for (const b of actions.querySelectorAll("button"))
+            b.disabled = false;
+        }
       });
-    if (next)
+    const labels = {
+      confirmado: "Confirmar recebimento",
+      em_preparacao: "Iniciar preparação",
+      pronto: "Pedido pronto",
+      saiu_para_entrega: "Saiu para entrega",
+      concluido: "Concluir pedido",
+      cancelado: "Cancelar pedido",
+    };
+    for (const next of p.proximos_status)
       actions.append(
-        button(statuses[next] + " →", () => change(next), "primary"),
-        button("Cancelar", () => {
-          if (confirm("Cancelar este pedido?")) change("cancelado");
-        }),
+        button(
+          labels[next],
+          () => {
+            if (next !== "cancelado" || confirm("Cancelar este pedido?"))
+              change(next);
+          },
+          next === "cancelado" ? "" : "primary",
+        ),
       );
+    const storeLink = el(
+      "a",
+      "Abrir pedido no WhatsApp da loja ↗",
+      "whatsapp-link",
+    );
+    storeLink.href = p.whatsapp_url;
+    storeLink.target = "_blank";
+    storeLink.rel = "noopener noreferrer";
+    card.append(storeLink);
+    if (p.notificacao) {
+      const preview = el("details");
+      preview.append(
+        el("summary", "Mensagem para o cliente"),
+        el("pre", p.notificacao.mensagem),
+      );
+      card.append(preview);
+      const open = button(
+        p.notificacao.aberto_em
+          ? "Abertura já solicitada"
+          : "Abrir WhatsApp do cliente ↗",
+        async () => {
+          if (open.disabled) return;
+          open.disabled = true;
+          // Abre durante o clique para evitar bloqueio de popup após a chamada HTTP.
+          const popup = window.open("about:blank", "_blank");
+          if (!popup) {
+            open.disabled = false;
+            notify(
+              "Permita a abertura de uma nova janela para acessar o WhatsApp.",
+              true,
+            );
+            return;
+          }
+          popup.opener = null;
+          try {
+            const result = await api(
+              `admin/pedidos/${p.id}/whatsapp`,
+              send("POST", { historico_id: p.notificacao.id }),
+            );
+            popup.location.href = result.whatsapp_url;
+            open.textContent = "Abertura já solicitada";
+            notify(
+              "Abertura do WhatsApp solicitada. Confirme o envio no WhatsApp; a Menuza não verifica o envio.",
+            );
+          } catch (e) {
+            popup.close();
+            open.disabled = e.status === 409;
+            notify(e.message, true);
+          }
+        },
+      );
+      open.disabled = Boolean(p.notificacao.aberto_em);
+      actions.append(open);
+    }
+    card.append(
+      el(
+        "p",
+        "O link abre o WhatsApp com a mensagem preenchida. O envio exige confirmação manual.",
+        "help",
+      ),
+    );
     card.append(actions);
     const history = el("details"),
       list = el("ol");
@@ -622,6 +739,11 @@ async function orderView(view) {
         el(
           "li",
           statuses[h.status] +
+            " · " +
+            (h.usuario_email ||
+              (h.status === "pendente"
+                ? "Cliente no checkout"
+                : "Autor não registrado (histórico anterior)")) +
             " · " +
             new Date(h.criado_em).toLocaleString("pt-BR", {
               timeZone: "America/Sao_Paulo",

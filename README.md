@@ -1,132 +1,164 @@
-# Menuza
+# Menuza SaaS 1.0
 
-Cardápio digital e gestão de pedidos para pequenos negócios. O cliente monta o pedido pelo celular; a loja recebe um registro no painel e uma mensagem pronta para WhatsApp.
+Cardápios digitais e pedidos para pequenos estabelecimentos, com administração comercial centralizada. Evolução do projeto existente em Node.js, Express 5, PostgreSQL/pg, HTML/CSS/JavaScript puro, JWT/bcrypt e cookies httpOnly.
 
-## Funcionalidades
+**Estado:** implementação e validação local. A instalação comercial depende de hospedagem/banco persistentes, domínio HTTPS, backups externos e homologação no provedor. A base local em `/tmp` não é produção. Veja [publicação](docs/PUBLICACAO.md) e [validação](docs/VALIDACAO.md).
 
-- Cardápios independentes por estabelecimento, busca, categorias e personalização com adicionais.
-- Carrinho por loja salvo no navegador, entrega ou retirada e checkout com aviso de privacidade.
-- Preços calculados no servidor, numeração sequencial por loja e gravação transacional.
-- Painel com login, indicadores do dia, pedidos, histórico e filtros por data/status.
-- Cadastro, edição e desativação de categorias, produtos, grupos e adicionais.
-- Upload de fotos e logo, configuração de cores, WhatsApp, taxa, horários e abertura manual.
-- Isolamento de dados na API e nas chaves estrangeiras do PostgreSQL.
+## O que está implementado
 
-## Stack
+- Tenants independentes, slugs únicos automáticos/editáveis, FKs compostas e autorização pelo tenant autenticado.
+- Superadmin em `/superadmin`: dashboard, busca/filtro de lojas, cadastro/edição, contas de acesso, contrato/plano, histórico, suspensão, reativação e arquivamento com preservação dos registros.
+- Planos configuráveis (Básico R$ 49,90, Profissional R$ 79,90, Completo R$ 119,90), preço contratado independente, limites de produtos/pedidos e recursos de adicionais/personalização.
+- PIX manual com confirmação explícita, referência única e histórico; vencimentos, estados de assinatura, rotina auditada e bloqueio no backend. Lembretes em outbox com webhook opcional.
+- Cardápio, busca, categorias, produtos/adicionais, carrinho por loja, entrega/retirada, taxa, checkout e cálculo definitivo no servidor.
+- Pedidos transacionais, numeração por loja, snapshots, idempotência no checkout, mensagem/link para WhatsApp e gestão/histórico de status.
+- Painel da loja com catálogo, configurações, logo, banner, cores, WhatsApp, horários informativos, abertura manual e consulta da assinatura.
+- Sessões persistidas revogáveis, cookies separados por papel, validação de origem/entradas, rate limit, SQL parametrizado e upload normalizado em WebP.
+- Site comercial responsivo, planos reais do banco, demos e formulário de interessados consultável pelo superadmin.
+- Migrations controladas, health, Render Blueprint, Dockerfile, modelos VPS/systemd/Caddy e scripts de backup/restauração.
 
-Node.js 26 (24+), Express 5, PostgreSQL 12+, driver `pg`, SQL parametrizado, bcrypt e JWT em cookie httpOnly. Interfaces em HTML, CSS e JavaScript puro, sem etapa de build. Jest, Supertest e Chrome/Playwright Core para verificação.
+Não há cobrança automática de cartão/PIX, envio automático pelo WhatsApp, envio de lembrete sem provedor configurado, recuperação de senha por e-mail, PDV ou impressão. O consumidor paga diretamente à loja. Nenhum pagamento real foi simulado na produção.
 
-## Instalar e rodar do zero
+## Instalação local
+
+Requer Node 24+ (QA com Node 26), PostgreSQL e cliente pg_dump compatível para backups.
 
 ```bash
-git clone https://github.com/joaovieira010/menuza.git
-cd menuza
 nvm install
 nvm use
 npm ci
 cp backend/.env.example backend/.env
 ```
 
-Crie o usuário e os bancos no PostgreSQL, se ainda não existirem. O comando `\password` solicita a senha sem colocá-la no histórico do terminal:
-
-```bash
-sudo -u postgres psql
-```
+No PostgreSQL, crie usuário com senha e bancos distintos para desenvolvimento e testes:
 
 ```sql
 CREATE ROLE menuza_app LOGIN;
 \password menuza_app
 CREATE DATABASE menuza OWNER menuza_app;
 CREATE DATABASE menuza_test OWNER menuza_app;
-\q
 ```
 
-Edite `backend/.env`: preencha `DATABASE_URL` com a senha do banco, gere `JWT_SECRET` com `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"` e escolha `SEED_ADMIN_PASSWORD` (12 caracteres ou mais; até 72 bytes). Caracteres especiais na senha dentro da URL precisam ser codificados com percent-encoding. Nunca adicione esse arquivo ao Git.
+Preencha `DATABASE_URL`, `TEST_DATABASE_URL` e `JWT_SECRET` em `backend/.env`. Gere o secret com `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`. Não versione o arquivo. Senhas na URL devem usar percent-encoding.
 
 ```bash
 npm run migrate
+# Opcional, apenas demonstrações; configure SEED_ADMIN_PASSWORD antes:
 npm run seed
+# Configure SUPERADMIN_EMAIL e SUPERADMIN_PASSWORD fortes para o primeiro acesso:
+npm run superadmin:create
 npm start
-# Durante desenvolvimento, use npm run dev no lugar de npm start.
 ```
 
-Acesse:
+Remova `SUPERADMIN_PASSWORD` do ambiente depois de criar a conta. O provisionamento não sobrescreve e-mail existente. Seed não apaga pedidos nem redefine senhas. Novos demos recebem avaliação de 14 dias, sem recebimentos fictícios. Lojas antigas também recebem avaliação na migração: revise seus contratos antes de publicar.
 
-| Destino                  | Endereço local                          |
-| ------------------------ | --------------------------------------- |
-| Cardápio de lanches      | http://localhost:3000/hamburgueria-demo |
-| Cardápio de doces        | http://localhost:3000/doces-demo        |
-| Painel                   | http://localhost:3000/admin             |
-| Verificação de banco/API | http://localhost:3000/health            |
+| Área                     | Endereço local                                        |
+| ------------------------ | ----------------------------------------------------- |
+| Institucional            | http://localhost:3000/                                |
+| Proprietário da Menuza   | http://localhost:3000/superadmin                      |
+| Administrador de loja    | http://localhost:3000/admin                           |
+| Demos, se seed executado | http://localhost:3000/hamburgueria-demo e /doces-demo |
+| Saúde do banco           | http://localhost:3000/health                          |
 
-Use o host exato de `APP_ORIGIN` no navegador. `localhost` e `127.0.0.1` representam origens diferentes.
+Demos usam `admin@hamburguer.demo` e `admin@doces.demo` com `SEED_ADMIN_PASSWORD` definido no momento da criação. Contas de clientes são criadas pelo superadmin. Não há senha padrão de superadmin. `localhost` é somente ambiente de desenvolvimento.
 
-### Credenciais do seed
+Para iniciar uma instalação já configurada (sem seed ou recriação de contas):
 
-| Loja            | E-mail                  | Senha                                        |
-| --------------- | ----------------------- | -------------------------------------------- |
-| Hamburguer Demo | `admin@hamburguer.demo` | Valor de `SEED_ADMIN_PASSWORD` no seu `.env` |
-| Doces Demo      | `admin@doces.demo`      | Valor de `SEED_ADMIN_PASSWORD` no seu `.env` |
-
-Nenhuma senha padrão fica no código. O seed pode ser executado novamente: pula lojas existentes e preserva pedidos e credenciais. Alterar `SEED_ADMIN_PASSWORD` depois não muda usuários já criados. As imagens iniciais são ilustrações de espaço reservado; envie fotos reais pelo painel. O WhatsApp do seed é fictício: substitua-o em **Minha loja** antes de usar com clientes.
-
-### Variáveis de ambiente
-
-| Variável              | Uso                                                              |
-| --------------------- | ---------------------------------------------------------------- |
-| `DATABASE_URL`        | Conexão PostgreSQL da aplicação; obrigatória                     |
-| `JWT_SECRET`          | Chave aleatória com pelo menos 32 caracteres; obrigatória        |
-| `PORT`                | Porta HTTP; padrão `3000`                                        |
-| `APP_ORIGIN`          | Origem exata permitida; padrão `http://localhost:3000`           |
-| `NODE_ENV`            | `development` local; `production` habilita cookie Secure e HSTS  |
-| `SEED_ADMIN_PASSWORD` | Senha usada apenas ao criar os admins demo                       |
-| `TEST_DATABASE_URL`   | Banco exclusivo e descartável, com nome terminado em `_test`     |
-| `CHROME_PATH`         | Executável para QA de navegador; padrão `/usr/bin/google-chrome` |
-
-O servidor escuta em `127.0.0.1`. Em produção, coloque-o atrás de proxy reverso com HTTPS e configure `APP_ORIGIN` com o domínio público. Mantenha `backend/uploads` em volume persistente e faça backup dele junto com o banco. O limitador usa memória do processo: múltiplas instâncias exigirão armazenamento compartilhado e configuração explícita de proxy confiável.
-
-## Testar
-
-No `.env`, configure, por exemplo:
-
-```dotenv
-TEST_DATABASE_URL=postgresql://menuza_app:SUA_SENHA@localhost:5432/menuza_test
+```bash
+nvm use
+npm start
 ```
+
+Ao atualizar o backend, encerre a instância anterior com Ctrl+C no terminal dela antes de iniciar novamente. `npm start` mantém o código carregado em memória; para desenvolvimento com recarga automática use `npm run dev`. A inicialização informa PID e URLs dos dois painéis. Se a porta estiver ocupada, a nova instância falha com diagnóstico e não executa a rotina de cobrança.
+
+Se `/superadmin` mostrar um cardápio, confira o processo na porta 3000 com `ss -ltnp 'sport = :3000'`: uma instância anterior à adição da rota interpreta `superadmin` como slug de loja. Reinicie essa instância a partir deste diretório. O login da plataforma usa `/api/superadmin` e cookie `menuza_platform`; o painel da loja usa `/api/admin` e cookie `menuza`, sem compartilhar autenticação.
+
+Para investigar credenciais sem redefinir senhas nem alterar dados, execute com Node 24 ou superior:
+
+```bash
+npm run auth:check -- cortesbrsail67@gmail.com
+# Administrador de loja:
+npm run auth:check -- email-da-loja@example.com STORE_ADMIN
+```
+
+A senha é solicitada com entrada oculta no terminal; não a passe por argumento, pipe ou mensagem. O comando usa a mesma configuração, validação, consulta de usuário e comparação bcrypt do login. Exibe somente banco/servidor/porta e resultados booleanos, sem hashes, senhas ou URL de conexão. Usa uma transação somente de leitura e não cria sessões. `senha_confere: true` confirma a comparação local, mas não testa o servidor HTTP em outro processo ou ambiente. Variáveis já exportadas no processo prevalecem sobre `backend/.env`; o caminho desse arquivo é independente do diretório de execução.
+
+O teste `npx jest --runInBand backend/tests/sessions.test.js` verifica as duas rotas HTTP com PostgreSQL e bcrypt reais, cookies, autenticação de sessão, logout, isolamento de papéis e bloqueios. Exige `TEST_DATABASE_URL` separado terminado em `_test` e usa apenas tabelas temporárias com rollback, sem seeds ou migrations.
+
+## Variáveis
+
+| Variável                                                                                    | Finalidade                                                                        |
+| ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `DATABASE_URL`                                                                              | PostgreSQL persistente da aplicação                                               |
+| `JWT_SECRET`                                                                                | Secret aleatório, pelo menos 32 caracteres                                        |
+| `APP_ORIGIN`                                                                                | Origem exata, sem barra final; HTTPS público obrigatório em produção              |
+| `NODE_ENV`                                                                                  | `development`, `test` ou `production`                                             |
+| `HOST`, `PORT`                                                                              | Bind; padrões 127.0.0.1 e 3000; containers usam HOST=0.0.0.0                      |
+| `TRUST_PROXY`                                                                               | IPs/redes de proxies confiáveis ou quantidade de saltos explicitamente homologada |
+| `UPLOAD_DIR`                                                                                | Pasta de desenvolvimento; padrão backend/uploads                                  |
+| `IMAGE_STORAGE`                                                                             | `local` no desenvolvimento; `cloudinary` obrigatório em produção                  |
+| `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`, `CLOUDINARY_PREFIX` | Storage permanente; credenciais somente no backend                                |
+| `BILLING_ENABLED`                                                                           | Manter `false` durante a homologação                                              |
+| `SUPERADMIN_EMAIL`, `SUPERADMIN_PASSWORD`                                                   | Somente provisionamento inicial                                                   |
+| `SEED_ADMIN_PASSWORD`                                                                       | Criação dos demos, mínimo 12 caracteres e até 72 bytes                            |
+| `TEST_DATABASE_URL`                                                                         | Banco separado e descartável terminado em `_test`                                 |
+| `CHROME_PATH`                                                                               | Chrome para QA; padrão /usr/bin/google-chrome                                     |
+| `BILLING_WEBHOOK_URL`, `BILLING_WEBHOOK_TOKEN`                                              | Integração HTTPS opcional de lembretes                                            |
+| `BACKUP_DIR`, `PG_DUMP_BIN`, `PG_RESTORE_BIN`                                               | Backup/restauração; binaries padrão pg_dump/pg_restore                            |
+| `RESTORE_FROM`, `RESTORE_DATABASE_URL`, `RESTORE_UPLOAD_DIR`, `RESTORE_CONFIRM`             | Restauração em destinos vazios, confirmação pelo nome do banco                    |
+
+O `.env.example` contém exemplos sem credenciais válidas. Use conexão direta do Neon com `sslmode=verify-full` em produção; PgBouncer transacional é incompatível com as travas de sessão da cobrança. Não use `_test` em produção. Configure a origem e o proxy conforme o domínio real. Comece com uma instância por causa dos rate limits em memória. A integração Cloudinary exige homologação real antes da publicação; testes simulados não comprovam acesso à conta.
+
+## Operação
+
+O proprietário cadastra um estabelecimento, informa acesso, plano, valor e vencimento e compartilha o link gerado. A loja nasce fechada; o administrador cadastra categorias/produtos e configura atendimento antes de abrir. Não é preciso informar tenant em nenhuma chamada administrativa.
+
+PIX só é registrado após conferir o crédito. O pagamento confirmado exige referência única e próximo vencimento explícito. A política padrão é pendência no vencimento, lembrete/atraso em três dias e suspensão em sete. Suspensão manual tem precedência e requer reativação explícita. Arquivar preserva pedidos e financeiro.
+
+```bash
+npm run billing:run
+npm run backup
+# Só com destinos vazios e variáveis RESTORE_* configuradas:
+npm run restore
+```
+
+A rotina também roda no servidor ao iniciar e a cada 15 minutos. Bloqueio é verificado online independentemente do cron. Lembretes não são enviados sem o webhook configurado.
+
+Leia o [guia do proprietário](docs/GUIA_PROPRIETARIO.md) para o passo a passo completo.
+
+## Testes
 
 ```bash
 npm test
+npm run test:browser:saas
 ```
 
-**A suíte de integração limpa o banco de testes.** Há proteções para exigir nome terminado em `_test` e uma URL diferente da aplicação. Use exclusivamente um banco descartável. Os testes usam PostgreSQL real, aplicam migrations, recriam os demos e geram uma senha efêmera própria. Não dependem de mocks para provar o isolamento e a concorrência.
+`npm test` aplica migrations e **limpa o banco descartável de testes** antes de criar fixtures. Nunca execute contra base comercial. A suíte testa PostgreSQL real, não mocks de persistência. O teste SaaS abre seu próprio servidor/Chrome no banco `_test` e cria dados identificados de QA. Não registra recebimentos em desenvolvimento/produção nem envia WhatsApp real.
 
-Com a aplicação rodando e o Chrome instalado:
+Para regressão das fixtures originais e backup, o administrador do banco deve criar destinos adicionais:
+
+```sql
+CREATE DATABASE menuza_legacy_test OWNER menuza_app;
+CREATE DATABASE menuza_restore_test OWNER menuza_app;
+```
 
 ```bash
-npm run test:browser
+npm run test:browser:regression
+npm run test:backup
 ```
 
-O teste de navegador usa os demos e a senha de seed do `.env`, cria um pedido fictício, conclui esse pedido e cadastra/desativa um produto de QA. Use uma base de desenvolvimento. Intercepta `wa.me`, sem enviar mensagens; screenshots ficam em `/tmp/menuza-*.png`. O teste assume os preços originais do seed e a loja aberta. Os pedidos fictícios permanecem identificados no painel.
+O banco de restauração deve estar vazio; uma nova execução sobre destino populado é recusada. O teste de regressão usa `menuza_legacy_test`, renova apenas a senha das fixtures desse banco e mantém os asserts do teste original. `npm run test:browser` continua disponível contra a base de desenvolvimento e pressupõe os produtos/preços originais do seed: não rode em lojas personalizadas ou produção.
 
-O relatório da execução desta entrega está em [docs/VALIDACAO.md](docs/VALIDACAO.md).
+Há screenshots em `/tmp/menuza-*.png`. Não execute testes que escrevem no mesmo banco simultaneamente. Resultados e limites: [docs/VALIDACAO.md](docs/VALIDACAO.md).
 
-## Como usar o painel
+## Documentação
 
-1. Entre com o usuário da sua loja. Abra **Minha loja** para cadastrar WhatsApp, logo, informações e taxa.
-2. Cadastre categorias e produtos. Preços na tela são em reais; o banco usa centavos.
-3. Em **Adicionais**, crie um grupo vinculado a produto ou categoria e depois suas opções. Mínimo `0` torna o grupo opcional; para grupos obrigatórios, cadastre opções ativas suficientes.
-4. Compartilhe o link **Abrir meu cardápio**. A chave do carrinho é separada por loja.
-5. Em **Pedidos**, avance os status. Retirada pula “Saiu para entrega”. Cancelamentos e conclusões são finais. O histórico preserva nome, telefone, preços e observações do momento da compra.
-6. Atualize a lista para receber novos pedidos; filtre datas e status para consultar o histórico. São exibidos os 200 pedidos mais recentes do filtro.
+- [Auditoria e etapas](docs/AUDITORIA.md)
+- [Arquitetura](docs/ARQUITETURA.md)
+- [Decisões e limitações](docs/decisoes.md)
+- [API](docs/API.md)
+- [Guia do proprietário](docs/GUIA_PROPRIETARIO.md)
+- [Publicação, custos, backups e operação](docs/PUBLICACAO.md)
+- [Validação](docs/VALIDACAO.md)
 
-Desativar preserva o histórico. Para reativar, edite o registro e marque **Ativo no cardápio**. Categorias desativadas também ocultam seus produtos.
-
-## API e documentação
-
-- [Arquitetura e fluxo do pedido](docs/ARQUITETURA.md)
-- [Decisões técnicas e limites](docs/decisoes.md)
-- [Contrato da API](docs/API.md)
-- [Verificações executadas](docs/VALIDACAO.md)
-
-## Roadmap
-
-PDV, comandas, impressão, painel de cozinha, relatórios detalhados, cupons, fidelidade, domínio próprio e mensalidade. Pagamento online e WhatsApp Business oficial são integrações futuras. Nesta versão, a cobrança é externa e o WhatsApp recebe um link de conversa; não existe envio automático pela API oficial.
+As mensagens padronizadas, status “Pedido pronto”, histórico com funcionário e abertura manual de notificações estão descritos em [Pedidos e WhatsApp](docs/PEDIDOS_WHATSAPP.md), incluindo a migration 005 e o roteiro de homologação.
