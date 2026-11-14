@@ -35,7 +35,12 @@ if (
     "Configure as credenciais Cloudinary e um prefixo válido no backend.",
   );
 if (process.env.NODE_ENV === "production") {
-  const origin = new URL(process.env.APP_ORIGIN || "");
+  let origin;
+  try {
+    origin = new URL(process.env.APP_ORIGIN || "");
+  } catch {
+    throw new Error("Produção exige APP_ORIGIN público com HTTPS.");
+  }
   if (
     origin.origin !== process.env.APP_ORIGIN ||
     origin.protocol !== "https:" ||

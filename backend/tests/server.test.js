@@ -1,6 +1,58 @@
 const net = require("node:net");
 const { spawn } = require("node:child_process");
 
+test("bootstrap com cobrança desativada inicia sem consultar ou migrar banco", async () => {
+  const result = await new Promise((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      [
+        "-e",
+        `const pool = require('./backend/src/database/pool');
+        const forbidden = () => { throw new Error('BANCO_INDEVIDO'); };
+        pool.query = forbidden;
+        pool.connect = forbidden;
+        require('./backend/src/services/billing').reconcile = forbidden;
+        require('./backend/src/server');`,
+      ],
+      {
+        env: {
+          ...process.env,
+          NODE_ENV: "production",
+          HOST: "127.0.0.1",
+          PORT: "0",
+          BILLING_ENABLED: "false",
+          DATABASE_URL:
+            "postgresql://unused@ep-isolated.neon.tech/menuza?sslmode=verify-full",
+          JWT_SECRET: require("node:crypto").randomBytes(48).toString("hex"),
+          APP_ORIGIN: "https://menuza.example",
+          IMAGE_STORAGE: "cloudinary",
+          CLOUDINARY_CLOUD_NAME: "isolated-test",
+          CLOUDINARY_API_KEY: "isolated-key",
+          CLOUDINARY_API_SECRET: "isolated-secret",
+        },
+      },
+    );
+    let output = "";
+    const timeout = setTimeout(() => child.kill("SIGTERM"), 3000);
+    child.stdout.on("data", (data) => {
+      output += data;
+      if (output.includes("Painel da loja:")) child.kill("SIGTERM");
+    });
+    child.stderr.on("data", (data) => (output += data));
+    child.on("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timeout);
+      resolve({ code, output });
+    });
+  });
+  expect(result.code).toBe(0);
+  expect(result.output).toContain("Menuza em http");
+  expect(result.output).not.toContain("BANCO_INDEVIDO");
+});
+
 test("porta ocupada falha com diagnóstico sem iniciar cobrança", async () => {
   const occupied = net.createServer();
   await new Promise((resolve) => occupied.listen(0, "127.0.0.1", resolve));

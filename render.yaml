@@ -5,12 +5,13 @@ services:
     name: menuza
     runtime: node
     plan: free
+    autoDeployTrigger: "off"
     buildCommand: npm ci --omit=dev
     startCommand: npm start
     healthCheckPath: /health
     envVars:
       - key: NODE_VERSION
-        value: 24.13.0
+        value: 24.22.1
       - key: NODE_ENV
         value: production
       - key: HOST

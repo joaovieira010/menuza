@@ -56,3 +56,14 @@ test("URL inválida não vaza seu valor no diagnóstico", () => {
   expect(result.status).not.toBe(0);
   expect(result.stderr).not.toContain("credencial-privada-invalida");
 });
+test.each(["", "origem-privada-invalida"])(
+  "APP_ORIGIN ausente ou inválido tem diagnóstico seguro",
+  (origin) => {
+    const result = check({ APP_ORIGIN: origin });
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain(
+      "Produção exige APP_ORIGIN público com HTTPS.",
+    );
+    expect(result.stderr).not.toContain("origem-privada-invalida");
+  },
+);

@@ -1,8 +1,65 @@
 # Publicação e operação
 
-O manifesto atual usa Render Free, PostgreSQL Neon externo e Cloudinary. Não cria banco Render, disco pago ou tarefa de migration. Nenhum serviço foi provisionado nesta execução por falta de autenticação externa. O inventário e as restaurações locais não equivalem à homologação pública.
+O manifesto atual usa Render Free, PostgreSQL Neon externo e Cloudinary. Não cria banco Render, disco pago ou tarefa de migration. As 26 imagens foram importadas e verificadas byte a byte no Cloudinary. O serviço Render e o destino Neon ainda precisam ser configurados e homologados; nenhum deploy foi realizado nesta auditoria.
 
-Antes de qualquer migração, identificar todas as origens e comparar com o backup validado. O cluster do sistema na porta 5432 ainda exige acesso administrativo de leitura; a origem histórica 55432 está desligada. Não escolher uma base por suposição. Não alterar IDs, slugs, contas, hashes de senha ou contratos existentes. Nunca usar bases de QA como origem comercial.
+O usuário autorizou explicitamente o PostgreSQL recuperado na porta **55433**, base `menuza_recovered_20261114`, como fonte oficial dos dados da publicação, preservando integralmente a loja da Rayssa. Essa escolha não comprova a origem histórica dos dados. A porta 5432 não é requisito para validar a fonte autorizada; não iniciar bancos antigos para esse fim. Não alterar IDs, slugs, contas, hashes de senha ou contratos existentes. Nunca usar bases de QA como origem comercial.
+
+Para revalidar essa fonte sem migrations, escritas no PostgreSQL, reinício de bancos, sincronização ou deploy:
+
+```bash
+PUBLICATION_SOURCE_AUTHORIZATION=recovered-55433 node scripts/publication-revalidate.cjs
+```
+
+O procedimento confere os manifestos antigos, lê os dois dumps offline, verifica que todos os registros iniciais continuam presentes e que o estado atual é idêntico ao backup de publicação de três lojas. Também compara esquema, sequências, objetos grandes e todas as imagens. Qualquer divergência interrompe a execução. A evidência de restauração vem do relatório anterior, verificado por SHA-256; não se declara uma nova restauração nesta execução.
+
+Cada execução cria uma pasta privada nova `.local/publication-authorized-55433-*`, com `validation.json`, `SHA256SUMS` e `restored-uploads/`, compatíveis com `scripts/cloudinary-sync.cjs`. O status `VERIFIED` significa que a fonte escolhida pelo usuário foi validada contra esses backups, sem atestar uma origem histórica não verificada. Os relatórios antigos permanecem intactos. A revalidação não substitui a cópia externa privada nem a homologação dos serviços.
+
+## Auditoria para o primeiro deploy — 14/11/2026
+
+O `render.yaml` usa **Node nativo**, com `npm ci --omit=dev` no build e `npm start` na inicialização. O Dockerfile é uma alternativa: usa Node 24, usuário sem privilégios e inicia diretamente `backend/src/server.js`. Ambos escutam em `0.0.0.0`, respeitam `PORT`, têm health check em `/health` e deixam a cobrança automática desativada no primeiro deploy. O manifesto fixa Node 24.22.1 e `autoDeployTrigger: "off"`. Criar um serviço/Blueprint ainda inicia o primeiro deploy; essa criação deve aguardar autorização.
+
+Não há hooks npm de instalação/inicialização, `preDeployCommand`, migration, seed ou criação de usuário automática nesses caminhos. `/health` faz somente `SELECT 1`; não confirma que o esquema ou os dados foram restaurados. A aplicação valida as configurações antes de escutar. Uma desconexão ociosa do pool agora é tratada com log fixo, sem expor detalhes da conexão; origem ausente/inválida tem diagnóstico explícito e sanitizado.
+
+O backend é compatível com PostgreSQL do Neon via `pg`. A configuração local examinada continua apontando para PostgreSQL local. Não houve conexão ao Neon nem consulta às configurações de uma conta Render nesta auditoria. A validação de produção exige conexão direta e `sslmode=verify-full`; não fixa o fornecedor do PostgreSQL no código, preservando a opção VPS.
+
+Variáveis a configurar **no painel do Render**, sem copiar o `.env` local inteiro:
+
+| Variável                                                               | Valor ou providência                                                                      |
+| ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `NODE_VERSION`                                                         | `24.22.1`, já definido no manifesto para Node nativo                                      |
+| `NODE_ENV`                                                             | `production`                                                                              |
+| `HOST`                                                                 | `0.0.0.0`                                                                                 |
+| `PORT`                                                                 | Usar a variável fornecida pelo Render                                                     |
+| `APP_ORIGIN`                                                           | Origem HTTPS exata acessada pelo navegador, sem barra final nem caminho                   |
+| `DATABASE_URL`                                                         | Segredo com a conexão direta do Neon restaurado, sem `-pooler`, com `sslmode=verify-full` |
+| `JWT_SECRET`                                                           | Gerado pelo manifesto; manter estável entre deploys                                       |
+| `IMAGE_STORAGE`                                                        | `cloudinary`                                                                              |
+| `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Mesmas credenciais da importação validada, somente no backend                             |
+| `CLOUDINARY_PREFIX`                                                    | `menuza`, conferido como prefixo da importação                                            |
+| `BILLING_ENABLED`                                                      | `false` durante a homologação inicial                                                     |
+| `TRUST_PROXY`                                                          | Configurar os proxies reais após verificar a topologia do Render                          |
+
+`APP_ORIGIN` é obrigatório: valor ausente ou inválido impede a inicialização; um domínio diferente do acessado causa HTTP 403 nas APIs que recebem `Origin`. Se a primeira homologação usar o endereço `onrender.com`, usar essa origem e atualizar ao adotar domínio próprio. Os frontends acessam `/api` e `/uploads` na mesma origem; não precisam de URL Neon ou Cloudinary. As imagens são servidas pelo backend a partir do Cloudinary, compatíveis com a CSP que permite imagens da própria origem. Os cookies de ambos os painéis usam `HttpOnly`, `Secure` e `SameSite=Strict` em produção.
+
+Procedimento para publicar **após autorização**:
+
+1. Preparar um repositório de publicação sanitizado, com `package-lock.json`, `render.yaml`, backend, frontend e scripts necessários. Excluir segredos, `.local`, backups, uploads e histórico privado. Revisar os arquivos e o histórico antes de enviar. Esta auditoria não fez commit nem push.
+2. Provisionar Neon Free e preparar um banco de destino vazio. Guardar suas credenciais em configuração privada de serviço libpq chamada `menuza_neon`, com `sslmode=verify-full`, fora do repositório. Conferir que o serviço aponta para o destino novo. A restauração é uma etapa separada que escreve no destino e precisa de autorização; não foi executada nesta auditoria.
+3. Reconferir os hashes do backup autorizado e, na máquina autorizada com cliente PostgreSQL compatível, restaurar o dump preservando registros, IDs e hashes existentes:
+
+   ```bash
+   (cd .local/publication-Be8grd && sha256sum --check SHA256SUMS)
+   pg_restore --dbname='service=menuza_neon' --no-owner --no-acl --exit-on-error --single-transaction .local/publication-Be8grd/database.dump
+   ```
+
+   A configuração privada libpq deve fornecer também a autenticação do destino; não passar credenciais literais no comando. Antes de avançar, comparar esquema, seis migrations aplicadas, 21 tabelas, sequências, objetos grandes, todos os registros e hashes de senha com a evidência autorizada. Preservar as três lojas e a loja da Rayssa. Conferir referências às 26 imagens já importadas. Uma divergência bloqueia a publicação até investigação. Não há motivo identificado nesta auditoria para aplicar migrations adicionais.
+
+4. No Render, escolher **New → Web Service**, conectar o repositório sanitizado, selecionar runtime **Node**, raiz do projeto, plano **Free**, build `npm ci --omit=dev`, start `npm start` e health check `/health`. Deixar Pre-Deploy Command vazio e Auto-Deploy desativado. Alternativamente, usar o Blueprint `render.yaml`, que declara esses comandos e variáveis. O manifesto não utiliza o Dockerfile.
+5. Antes de confirmar a criação, preencher as variáveis da tabela e definir a origem HTTPS de homologação. Após a criação, conferir o endereço atribuído pelo Render e ajustar `APP_ORIGIN` se necessário, antes de testar login ou liberar tráfego. Manter webhooks de cobrança ausentes. Configurar `TRUST_PROXY` conforme os proxies efetivos e verificar cabeçalhos forjados na homologação.
+6. Confirmar a criação/deploy somente quando o destino Neon estiver validado. Acompanhar o build e o processo; `/health` deve responder 200. Verificar pelo navegador `/`, `/superadmin`, `/admin`, cada slug real e logo/banner/produtos. Testar login real com o proprietário somente em uma homologação autorizada: o login cria sessão no banco. Nesta auditoria, autenticação e imagens foram testadas com serviços simulados.
+7. Verificar imagens após reiniciar/reimplantar, cookies HTTPS, isolamento das lojas, origem e rate limit. Testes de escrita devem usar ambiente separado e lojas sintéticas. Concluir backups externos e monitoramento antes de liberar tráfego comercial. Planejar o corte para haver um único ambiente aceitando novas gravações.
+
+Passaram 49 testes isolados em sete suítes, cobrindo configuração, inicialização sem banco, health check, rotas, autenticação, imagens e home. Os testes desta auditoria não acessam PostgreSQL ou Cloudinary reais. O build Docker/Node 24 e a validação remota do Blueprint na conta Render continuam pendentes; a execução local dos testes usa Node 26.13.0. Referências consultadas: [Blueprint](https://render.com/docs/blueprint-spec), [versão do Node](https://render.com/docs/node-version), [Web Services](https://render.com/docs/web-services), [Node com Neon](https://neon.com/docs/guides/node) e [pool PostgreSQL](https://node-postgres.com/features/pooling).
 
 ## Render: caminho inicial
 
@@ -54,7 +111,7 @@ RESTORE_CONFIRM=nome_exato_do_novo_banco
 
 Execute `npm run restore`. O script valida hashes e recusa banco ou pasta populados; não executa DROP/clean. Após restaurar, confira contagens, health, pedidos históricos e imagens, execute migrations pendentes e só então altere conexão/volume do serviço durante manutenção. Em caso de falha de restauração, prepare outro destino vazio e investigue; não reexecute cegamente sobre resultado parcial.
 
-Foram restaurados o backup validado de 14/11 e uma nova cópia da base local configurada: 21 tabelas, sequências, objetos grandes e 26 imagens conferidos. Registros e hashes originais dos usuários foram preservados. Isso não resolve o acesso pendente ao cluster 5432 nem comprova a origem definitiva. A exportação/restauração Cloudinary foi testada com rede simulada; a conta real continua pendente de autenticação e homologação.
+Foram restaurados o backup validado de 14/11 e uma nova cópia da base local configurada: 21 tabelas, sequências, objetos grandes e 26 imagens conferidos. Registros e hashes originais dos usuários foram preservados. O usuário posteriormente autorizou a fonte recuperada na porta 55433, conforme descrito no início deste documento. A exportação/restauração Cloudinary foi testada com rede simulada; a importação real das 26 imagens também foi concluída e verificada byte a byte. A homologação pública da aplicação continua pendente.
 
 ## Cobrança e comunicação
 
@@ -73,7 +130,7 @@ Sem webhook não existe envio de lembrete; os eventos permanecem pendentes. Não
 - Reiniciar o processo e testar rotina; confirmar SSL/hostname/CORS e IP do rate limiter; restaurar backup em destino separado; documentar responsável, horário e evidências.
 - Definir contrato, suporte, política de privacidade/retenção e dados reais do operador na comunicação comercial antes de coletar clientes.
 
-Sem esses passos não considere a instalação pronta para vender. Não há credenciais, domínio, hospedagem ativa, storage externo ou monitoramento real contratados pelo código.
+Sem esses passos não considere a instalação pronta para vender. O Cloudinary já recebeu as 26 imagens; domínio, hospedagem, Neon e monitoramento ainda precisam de configuração e homologação.
 
 ## Limitações do orçamento zero
 

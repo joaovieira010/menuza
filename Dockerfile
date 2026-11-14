@@ -1,5 +1,5 @@
 FROM node:24-bookworm-slim
-ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000 UPLOAD_DIR=/var/lib/menuza/uploads
+ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000 BILLING_ENABLED=false UPLOAD_DIR=/var/lib/menuza/uploads
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
