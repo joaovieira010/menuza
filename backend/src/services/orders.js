@@ -130,6 +130,12 @@ async function createOrder(pool, slug, data) {
     if (!subscription.adicionais && data.itens.some((i) => i.adicionais.length))
       fail("Adicionais não disponíveis no plano atual.");
     if (!loja.aberto) fail("Este estabelecimento está fechado.");
+    if (loja[`${data.modalidade}_ativa`] === false)
+      fail(
+        data.modalidade === "entrega"
+          ? "Este estabelecimento não está recebendo pedidos de entrega."
+          : "Este estabelecimento não está recebendo pedidos de retirada.",
+      );
     const result = calculate(data, await catalog(c, loja));
     const {
       rows: [cliente],

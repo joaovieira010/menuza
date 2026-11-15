@@ -88,12 +88,20 @@ async function settings(req, res) {
   }
   const data = parse(schemas.loja, req.body),
     keys = Object.keys(data);
+  // O UPDATE avalia o estado final sob a mesma trava usada na criação do pedido.
+  // Clientes antigos que omitem os campos preservam as modalidades já salvas.
+  const modalities = ["entrega_ativa", "retirada_ativa"];
+  const changingModalities = modalities.some((key) => keys.includes(key));
+  const enabled = modalities.map((key) =>
+    keys.includes(key) ? `$${keys.indexOf(key) + 2}::boolean` : key,
+  );
   const {
     rows: [loja],
   } = await pool.query(
-    `UPDATE estabelecimentos SET ${keys.map((k, i) => `${k}=$${i + 2}`).join(",")} WHERE id=$1 RETURNING id,nome,slug,logo_url,banner_url,descricao,whatsapp,taxa_entrega,aberto,horarios,cor_principal`,
+    `UPDATE estabelecimentos SET ${keys.map((k, i) => `${k}=$${i + 2}`).join(",")} WHERE id=$1${changingModalities ? ` AND (${enabled.join(" OR ")})` : ""} RETURNING id,nome,slug,logo_url,banner_url,descricao,whatsapp,taxa_entrega,aberto,horarios,cor_principal,entrega_ativa,retirada_ativa`,
     [req.user.estabelecimento_id, ...Object.values(data)],
   );
+  if (!loja) fail("Mantenha ao menos uma modalidade de recebimento ativa.");
   res.json(loja);
 }
 async function orders(req, res) {

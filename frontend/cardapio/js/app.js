@@ -73,7 +73,9 @@ function updateCart() {
   $("#cart-count").textContent = n;
   $("#cart-total").textContent = money(subtotal());
 }
-function totals(modality = "entrega") {
+function totals(
+  modality = menu.loja.entrega_ativa === false ? "retirada" : "entrega",
+) {
   const box = el("div", "", "totals"),
     fee = modality === "entrega" ? menu.loja.taxa_entrega : 0;
   for (const [name, value] of [
@@ -115,9 +117,17 @@ function showStore() {
       s.aberto ? "● Aberto agora" : "● Fechado",
       s.aberto ? "badge open" : "badge closed",
     ),
-    el("span", "Entrega " + money(s.taxa_entrega)),
-    el("span", "Entrega e retirada"),
+    el(
+      "span",
+      s.entrega_ativa !== false
+        ? s.retirada_ativa !== false
+          ? "Entrega e retirada"
+          : "Entrega"
+        : "Retirada no estabelecimento",
+    ),
   );
+  if (s.entrega_ativa !== false)
+    meta.append(el("span", "Entrega " + money(s.taxa_entrega)));
   copy.append(
     title,
     el("p", s.descricao),
@@ -364,6 +374,7 @@ function showCart() {
         $("#checkout").hidden = false;
         $("#success").hidden = true;
         $("#checkout-error").textContent = "";
+        configureModalities();
         checkoutTotal();
         $("#checkout-dialog").showModal();
       },
@@ -377,6 +388,22 @@ $("#cart-open").addEventListener("click", () => {
 });
 $("#busca").addEventListener("input", renderProducts);
 const form = $("#checkout");
+function configureModalities() {
+  const select = form.elements.modalidade;
+  const previous = select.value;
+  select.replaceChildren();
+  for (const [value, title] of [
+    ["entrega", "Entrega"],
+    ["retirada", "Retirada no estabelecimento"],
+  ]) {
+    if (menu.loja[`${value}_ativa`] === false) continue;
+    const option = el("option", title);
+    option.value = value;
+    select.append(option);
+  }
+  if ([...select.options].some((option) => option.value === previous))
+    select.value = previous;
+}
 function checkoutTotal() {
   const mode = form.elements.modalidade.value;
   $("#address").hidden = mode !== "entrega";
@@ -398,6 +425,11 @@ form.addEventListener("submit", async (event) => {
   $("#checkout-error").textContent = "";
   try {
     const f = Object.fromEntries(new FormData(form));
+    if (
+      !["entrega", "retirada"].includes(f.modalidade) ||
+      menu.loja[`${f.modalidade}_ativa`] === false
+    )
+      throw new Error("Selecione uma modalidade de recebimento disponível.");
     const data = {
       cliente: { nome: f.nome, telefone: f.telefone },
       modalidade: f.modalidade,
@@ -495,6 +527,8 @@ try {
   } catch {
     cart = [];
   }
+  configureModalities();
+  checkoutTotal();
   showStore();
   categories();
   renderProducts();

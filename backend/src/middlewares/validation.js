@@ -79,17 +79,24 @@ const schemas = {
     preco: money,
     ativo: z.boolean().default(true),
   }),
-  loja: z.object({
-    nome: text(),
-    descricao: optional(),
-    logo_url: image,
-    banner_url: image,
-    whatsapp: phone,
-    taxa_entrega: money,
-    aberto: z.boolean(),
-    horarios: optional(),
-    cor_principal: z.string().regex(/^#[0-9a-fA-F]{6}$/),
-  }),
+  loja: z
+    .object({
+      nome: text(),
+      descricao: optional(),
+      logo_url: image,
+      banner_url: image,
+      whatsapp: phone,
+      taxa_entrega: money,
+      aberto: z.boolean(),
+      entrega_ativa: z.boolean().optional(),
+      retirada_ativa: z.boolean().optional(),
+      horarios: optional(),
+      cor_principal: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+    })
+    .refine(
+      (v) => v.entrega_ativa !== false || v.retirada_ativa !== false,
+      "Mantenha ao menos uma modalidade de recebimento ativa.",
+    ),
   pedido: z
     .object({
       idempotencia: z.uuid().optional(),

@@ -485,6 +485,21 @@ function settings(view) {
   textarea(box, "horarios", "Horários de atendimento", s.horarios);
   field(box, "cor_principal", "Cor principal", "color", s.cor_principal);
   check(box, "aberto", "Loja aberta para receber pedidos", s.aberto);
+  check(
+    box,
+    "entrega_ativa",
+    "Receber pedidos de entrega",
+    s.entrega_ativa ?? true,
+  );
+  check(
+    box,
+    "retirada_ativa",
+    "Receber pedidos de retirada",
+    s.retirada_ativa ?? true,
+  );
+  box.append(
+    el("p", "Mantenha ao menos uma modalidade de recebimento ativa.", "help"),
+  );
   box.append(el("p", "Endereço do cardápio: /" + s.slug, "help"));
   form.append(box);
   const submit = el("button", "Salvar configurações", "primary");
@@ -496,6 +511,13 @@ function settings(view) {
     e.preventDefault();
     submit.disabled = true;
     try {
+      if (
+        !form.elements.entrega_ativa.checked &&
+        !form.elements.retirada_ativa.checked
+      )
+        throw new Error(
+          "Mantenha ao menos uma modalidade de recebimento ativa.",
+        );
       const f = Object.fromEntries(new FormData(form));
       await api(
         "admin/configuracoes",
@@ -509,6 +531,8 @@ function settings(view) {
           horarios: f.horarios,
           cor_principal: f.cor_principal,
           aberto: form.elements.aberto.checked,
+          entrega_ativa: form.elements.entrega_ativa.checked,
+          retirada_ativa: form.elements.retirada_ativa.checked,
         }),
       );
       await refreshCatalog();

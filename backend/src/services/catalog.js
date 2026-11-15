@@ -48,7 +48,11 @@ async function catalog(db, loja, admin = false) {
   ];
   const publicLoja = Object.fromEntries(fields.map((k) => [k, loja[k]]));
   return {
-    loja: publicLoja,
+    loja: {
+      ...publicLoja,
+      entrega_ativa: loja.entrega_ativa ?? true,
+      retirada_ativa: loja.retirada_ativa ?? true,
+    },
     categorias,
     produtos,
     ...(admin ? { grupos, adicionais } : {}),
