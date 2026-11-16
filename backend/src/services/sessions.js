@@ -17,12 +17,15 @@ const cookieName = (role) =>
 function login(role) {
   return async (req, res) => {
     const d = parse(schemas.login, req.body);
-    const {
-      rows: [u],
-    } = await pool.query(
-      "SELECT * FROM usuarios WHERE email=$1 AND papel=$2 AND ativo=true",
+    const { rows } = await pool.query(
+      role === "SUPERADMIN"
+        ? "SELECT * FROM usuarios WHERE lower(btrim(email))=$1 AND papel=$2 AND ativo=true LIMIT 2"
+        : "SELECT * FROM usuarios WHERE email=$1 AND papel=$2 AND ativo=true",
       [d.email, role],
     );
+    // E-mails legados podem não estar normalizados. Não escolha uma conta
+    // arbitrária se houver mais de um Superadmin com o mesmo e-mail normalizado.
+    const u = role === "SUPERADMIN" && rows.length !== 1 ? undefined : rows[0];
     const valid = await bcrypt.compare(
       d.senha,
       u?.senha_hash ||

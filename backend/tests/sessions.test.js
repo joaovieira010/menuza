@@ -135,6 +135,63 @@ test("validação rejeita payload sem senha antes de consultar o banco", async (
   expect(query).not.toHaveBeenCalled();
 });
 
+test("Superadmin com email legado autentica sem alterar os dados da conta", async () => {
+  const email = "  Owner@Auth.Test  ";
+  await client.query("UPDATE usuarios SET email=$1 WHERE id=1", [email]);
+  const {
+    rows: [before],
+  } = await client.query("SELECT * FROM usuarios WHERE id=1");
+  try {
+    // Reproduz a consulta antiga: a entrada normalizada não encontrava a conta.
+    expect(
+      (
+        await client.query(
+          "SELECT id FROM usuarios WHERE email=$1 AND papel='SUPERADMIN' AND ativo=true",
+          ["owner@auth.test"],
+        )
+      ).rowCount,
+    ).toBe(0);
+    const agent = request.agent(app);
+    const response = await agent.post("/api/superadmin/login").send({
+      email: " OWNER@AUTH.TEST ",
+      senha: password,
+    });
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ email, papel: "SUPERADMIN" });
+    expect((await agent.get("/api/superadmin/me")).status).toBe(200);
+    expect((await agent.get("/api/admin/me")).status).toBe(401);
+    expect(
+      (await client.query("SELECT * FROM usuarios WHERE id=1")).rows[0],
+    ).toEqual(before);
+    expect((await agent.post("/api/superadmin/logout")).status).toBe(200);
+  } finally {
+    await client.query(
+      "UPDATE usuarios SET email='owner@auth.test' WHERE id=1",
+    );
+  }
+});
+
+test("Superadmin rejeita emails legados ambíguos sem escolher uma conta", async () => {
+  await client.query(
+    "INSERT INTO usuarios(id,email,senha_hash,papel,ativo) SELECT 4,' Owner@Auth.Test ',senha_hash,'SUPERADMIN',true FROM usuarios WHERE id=1",
+  );
+  try {
+    const before = (await client.query("SELECT count(*) AS n FROM sessoes"))
+      .rows[0].n;
+    const response = await request(app).post("/api/superadmin/login").send({
+      email: "owner@auth.test",
+      senha: password,
+    });
+    expect(response.status).toBe(401);
+    expect(response.headers["set-cookie"]).toBeUndefined();
+    expect(
+      (await client.query("SELECT count(*) AS n FROM sessoes")).rows[0].n,
+    ).toBe(before);
+  } finally {
+    await client.query("DELETE FROM usuarios WHERE id=4");
+  }
+});
+
 test("loja suspensa continua bloqueada mesmo com senha correta", async () => {
   await client.query(
     "UPDATE estabelecimentos SET situacao='suspended' WHERE id=1",
