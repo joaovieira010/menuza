@@ -24,6 +24,37 @@ const cloudinary = {
   apiSecret: process.env.CLOUDINARY_API_SECRET || "",
   prefix: process.env.CLOUDINARY_PREFIX || "menuza",
 };
+// APP_ORIGIN continua sendo a origem canônica (inclusive para links de e-mail).
+// Aliases são explícitos; nunca são inferidos de Host ou X-Forwarded-Host.
+const allowedOrigins = [
+  ...new Set(
+    (process.env.APP_ALLOWED_ORIGINS || "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+  ),
+];
+for (const value of allowedOrigins) {
+  let origin;
+  try {
+    origin = new URL(value);
+  } catch {
+    throw new Error(
+      "APP_ALLOWED_ORIGINS deve conter origens HTTP(S) exatas separadas por vírgula; em produção, HTTPS público.",
+    );
+  }
+  if (
+    origin.origin !== value ||
+    origin.hostname.includes("*") ||
+    !["http:", "https:"].includes(origin.protocol) ||
+    (process.env.NODE_ENV === "production" &&
+      (origin.protocol !== "https:" ||
+        ["localhost", "127.0.0.1", "[::1]"].includes(origin.hostname)))
+  )
+    throw new Error(
+      "APP_ALLOWED_ORIGINS deve conter origens HTTP(S) exatas separadas por vírgula; em produção, HTTPS público.",
+    );
+}
 if (
   imageStorage === "cloudinary" &&
   (!/^[a-zA-Z0-9_-]+$/.test(cloudinary.cloudName) ||
@@ -74,5 +105,6 @@ module.exports = {
     : process.env.TRUST_PROXY || false,
   port: Number(process.env.PORT || 3000),
   origin: process.env.APP_ORIGIN || "http://localhost:3000",
+  allowedOrigins,
   production: process.env.NODE_ENV === "production",
 };

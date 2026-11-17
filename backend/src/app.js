@@ -28,20 +28,32 @@ app.use(
     strictTransportSecurity: env.production ? undefined : false,
   }),
 );
-// Mesma origem: cookies e alterações só são aceitos do domínio configurado.
+// Origem canônica e aliases explicitamente configurados. O proxy e o Host da
+// requisição não podem ampliar a allowlist. Mantém proteção Fetch Metadata.
 app.use("/api", (req, res, next) => {
   const origin = req.get("origin");
-  if (
-    (origin && origin !== env.origin) ||
-    req.get("sec-fetch-site") === "cross-site"
-  )
+  const allowed =
+    !origin || origin === env.origin || env.allowedOrigins.includes(origin);
+  res.vary("Origin");
+  if (!allowed || req.get("sec-fetch-site") === "cross-site") {
+    // Somente motivos constantes: não registrar cabeçalhos, corpo ou credenciais.
+    console.warn("http.origin_rejected", {
+      reason: allowed ? "cross_site" : "origin_not_allowed",
+    });
     return res.status(403).json({ erro: "Origem não autorizada." });
+  }
   if (origin) {
-    res.set("Access-Control-Allow-Origin", env.origin);
-    res.set("Vary", "Origin");
+    res.set("Access-Control-Allow-Origin", origin);
     res.set("Access-Control-Allow-Credentials", "true");
   }
-  if (req.method === "OPTIONS") return res.sendStatus(204);
+  if (req.method === "OPTIONS")
+    return res
+      .set(
+        "Access-Control-Allow-Methods",
+        "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS",
+      )
+      .set("Access-Control-Allow-Headers", "Content-Type")
+      .sendStatus(204);
   next();
 });
 app.use(express.json({ limit: "64kb" }));

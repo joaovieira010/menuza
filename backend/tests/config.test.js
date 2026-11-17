@@ -9,6 +9,7 @@ const env = {
   CLOUDINARY_API_SECRET: "test-secret",
   JWT_SECRET: require("node:crypto").randomBytes(48).toString("hex"),
   APP_ORIGIN: "https://menuza.example",
+  APP_ALLOWED_ORIGINS: "",
 };
 function check(extra) {
   return spawnSync(
@@ -67,3 +68,35 @@ test.each(["", "origem-privada-invalida"])(
     expect(result.stderr).not.toContain("origem-privada-invalida");
   },
 );
+
+test("produção aceita allowlist HTTPS explícita dos dois domínios", () => {
+  expect(
+    check({
+      APP_ALLOWED_ORIGINS:
+        " https://menuzatech.com.br, https://menuza-0ax7.onrender.com ",
+    }).status,
+  ).toBe(0);
+});
+
+test.each([
+  "*",
+  "null",
+  "https://*.onrender.com",
+  "http://menuzatech.com.br",
+  "https://menuzatech.com.br/",
+  "https://menuzatech.com.br/path",
+  "https://menuzatech.com.br?secret=privado",
+  "https://user:privado@menuzatech.com.br",
+  "https://localhost",
+  "https://127.0.0.1",
+  "https://[::1]",
+  "https://menuzatech.com.br,origem-privada-invalida",
+])("produção rejeita alias inválido sem vazar configuração (%s)", (value) => {
+  const result = check({ APP_ALLOWED_ORIGINS: value });
+  expect(result.status).not.toBe(0);
+  expect(result.stderr).toContain(
+    "APP_ALLOWED_ORIGINS deve conter origens HTTP(S) exatas",
+  );
+  expect(result.stderr).not.toContain("origem-privada-invalida");
+  expect(result.stderr).not.toContain("privado");
+});

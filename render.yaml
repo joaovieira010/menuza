@@ -18,6 +18,8 @@ services:
         value: 0.0.0.0
       - key: APP_ORIGIN
         sync: false
+      - key: APP_ALLOWED_ORIGINS
+        value: https://menuzatech.com.br,https://menuza-0ax7.onrender.com
       - key: JWT_SECRET
         generateValue: true
       - key: IMAGE_STORAGE
