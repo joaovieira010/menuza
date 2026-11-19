@@ -145,7 +145,28 @@
           com o WhatsApp ao continuar. Para consultar ou excluir seus dados,
           fale com a loja. Não informe dados de cartão.
         </p>
-        <div id="checkout-total" class="totals"></div>
+        <fieldset>
+          <legend>Tem um cupom de desconto?</legend>
+          <div class="coupon-entry">
+            <label
+              >Código do cupom<input
+                id="coupon-code"
+                maxlength="40"
+                autocomplete="off"
+                autocapitalize="characters"
+                spellcheck="false"
+                aria-describedby="coupon-error"
+            /></label>
+            <button type="button" id="coupon-apply" class="primary">
+              Aplicar
+            </button>
+          </div>
+          <button type="button" id="coupon-remove" class="link-button" hidden>
+            Remover cupom
+          </button>
+          <p id="coupon-error" role="alert"></p>
+        </fieldset>
+        <div id="checkout-total" aria-live="polite"></div>
         <p id="checkout-error" role="alert"></p>
         <button id="confirm-order" class="primary wide">
           Confirmar e ir para o WhatsApp →

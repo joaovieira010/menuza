@@ -7,7 +7,7 @@ const env = require("./config/env");
 const pool = require("./database/pool");
 const { parse, schemas, slug, phone } = require("./middlewares/validation");
 const catalog = require("./services/catalog");
-const { createOrder } = require("./services/orders");
+const { createOrder, quoteCoupon } = require("./services/orders");
 const app = express();
 app.disable("x-powered-by");
 if (env.trustProxy) app.set("trust proxy", env.trustProxy);
@@ -71,6 +71,24 @@ app.get("/api/:slug/cardapio", async (req, res) => {
   await require("./services/billing").assertAccess(pool, loja.id);
   res.json(await catalog(pool, loja));
 });
+app.post(
+  "/api/:slug/cupons/validar",
+  rateLimit({
+    windowMs: 60000,
+    limit: 30,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+    message: { erro: "Muitas consultas de cupom. Aguarde um minuto." },
+  }),
+  async (req, res) =>
+    res.json(
+      await quoteCoupon(
+        pool,
+        parse(slug, req.params.slug),
+        parse(schemas.couponQuote, req.body),
+      ),
+    ),
+);
 app.post(
   "/api/:slug/pedidos",
   rateLimit({
@@ -204,6 +222,6 @@ app.use((err, req, res, next) => {
     message = "Não foi possível concluir. Tente novamente.";
     console.error("Falha interna:", err.code || err.name);
   }
-  res.status(status).json({ erro: message });
+  res.status(status).json({ erro: message, codigo: err.publicCode });
 });
 module.exports = app;

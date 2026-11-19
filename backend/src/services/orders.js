@@ -1,5 +1,6 @@
 const { whatsappUrl } = require("./whatsapp");
 const catalog = require("./catalog");
+const { findCoupon, couponDiscount } = require("./coupons");
 const brl = (v) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(
     v / 100,
@@ -9,7 +10,7 @@ function fail(message, status = 400) {
   e.status = status;
   throw e;
 }
-function calculate(data, menu) {
+function calculateBase(data, menu) {
   let subtotal = 0;
   const itens = data.itens.map((item) => {
     const product = menu.produtos.find(
@@ -41,9 +42,64 @@ function calculate(data, menu) {
   const total = subtotal + taxa_entrega;
   if (!Number.isSafeInteger(total) || total > 10000000)
     fail("Pedido excede o limite permitido.");
-  if (data.troco_para !== null && data.troco_para < total)
-    fail("O valor para troco deve ser maior ou igual ao total.");
   return { itens, subtotal, taxa_entrega, total };
+}
+function checkChange(data, total) {
+  if (data.troco_para != null && data.troco_para < total)
+    fail("O valor para troco deve ser maior ou igual ao total.");
+}
+function calculate(data, menu) {
+  const result = calculateBase(data, menu);
+  checkChange(data, result.total);
+  return result;
+}
+function checkOrderAvailability(loja, subscription, data) {
+  if (!subscription.adicionais && data.itens.some((i) => i.adicionais.length))
+    fail("Adicionais não disponíveis no plano atual.");
+  if (!loja.aberto) fail("Este estabelecimento está fechado.");
+  if (loja[`${data.modalidade}_ativa`] === false)
+    fail(
+      data.modalidade === "entrega"
+        ? "Este estabelecimento não está recebendo pedidos de entrega."
+        : "Este estabelecimento não está recebendo pedidos de retirada.",
+    );
+}
+async function priceWithCoupon(db, loja, data, menu, lock) {
+  const base = calculateBase(data, menu);
+  const coupon = await findCoupon(db, loja.id, data.cupom_codigo, lock);
+  const desconto = await couponDiscount(db, coupon, base.subtotal, brl);
+  return {
+    ...base,
+    cupom_id: coupon.id,
+    cupom_codigo: coupon.codigo,
+    total_original: base.total,
+    desconto,
+    total: base.total - desconto,
+  };
+}
+async function quoteCoupon(db, slug, data) {
+  const {
+    rows: [loja],
+  } = await db.query("SELECT * FROM estabelecimentos WHERE slug=$1", [slug]);
+  if (!loja || loja.excluido_em) fail("Estabelecimento não encontrado.", 404);
+  const subscription = await require("./billing").assertAccess(db, loja.id);
+  checkOrderAvailability(loja, subscription, data);
+  const {
+    cupom_codigo,
+    subtotal,
+    taxa_entrega,
+    total_original,
+    desconto,
+    total,
+  } = await priceWithCoupon(db, loja, data, await catalog(db, loja), false);
+  return {
+    cupom_codigo,
+    subtotal,
+    taxa_entrega,
+    total_original,
+    desconto,
+    total,
+  };
 }
 function message(loja, data, order) {
   const e = data.endereco;
@@ -61,6 +117,9 @@ function message(loja, data, order) {
     `Subtotal: ${brl(order.subtotal)}`,
     ...(data.modalidade === "entrega"
       ? [`Taxa de Entrega: ${brl(order.taxa_entrega)}`]
+      : []),
+    ...(order.cupom_codigo
+      ? [`Cupom: ${order.cupom_codigo}`, `Desconto: - ${brl(order.desconto)}`]
       : []),
     `Total: ${brl(order.total)}`,
     "",
@@ -127,16 +186,12 @@ async function createOrder(pool, slug, data) {
           409,
         );
     }
-    if (!subscription.adicionais && data.itens.some((i) => i.adicionais.length))
-      fail("Adicionais não disponíveis no plano atual.");
-    if (!loja.aberto) fail("Este estabelecimento está fechado.");
-    if (loja[`${data.modalidade}_ativa`] === false)
-      fail(
-        data.modalidade === "entrega"
-          ? "Este estabelecimento não está recebendo pedidos de entrega."
-          : "Este estabelecimento não está recebendo pedidos de retirada.",
-      );
-    const result = calculate(data, await catalog(c, loja));
+    checkOrderAvailability(loja, subscription, data);
+    const menu = await catalog(c, loja);
+    const result = data.cupom_codigo
+      ? await priceWithCoupon(c, loja, data, menu, true)
+      : calculate(data, menu);
+    if (data.cupom_codigo) checkChange(data, result.total);
     const {
       rows: [cliente],
     } = await c.query(
@@ -149,10 +204,19 @@ async function createOrder(pool, slug, data) {
       [loja.id],
     );
     const e = data.endereco;
+    const couponValues = result.cupom_id
+      ? [
+          result.cupom_id,
+          result.cupom_codigo,
+          result.total_original,
+          result.desconto,
+        ]
+      : [];
     const {
       rows: [pedido],
     } = await c.query(
-      `INSERT INTO pedidos(estabelecimento_id,cliente_id,numero,modalidade,forma_pagamento,troco_para,subtotal,taxa_entrega,total,cliente_nome,cliente_telefone,observacoes,rua,numero_endereco,bairro,complemento,referencia) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING id`,
+      `INSERT INTO pedidos(estabelecimento_id,cliente_id,numero,modalidade,forma_pagamento,troco_para,subtotal,taxa_entrega,total,cliente_nome,cliente_telefone,observacoes,rua,numero_endereco,bairro,complemento,referencia${couponValues.length ? ",cupom_id,cupom_codigo,total_original,desconto" : ""})
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17${couponValues.length ? ",$18,$19,$20,$21" : ""}) RETURNING id`,
       [
         loja.id,
         cliente.id,
@@ -171,6 +235,7 @@ async function createOrder(pool, slug, data) {
         e.bairro,
         e.complemento,
         e.referencia,
+        ...couponValues,
       ],
     );
     for (const i of result.itens) {
@@ -203,6 +268,11 @@ async function createOrder(pool, slug, data) {
       id: pedido.id,
       numero,
       total: result.total,
+      ...(result.cupom_codigo && {
+        cupom_codigo: result.cupom_codigo,
+        total_original: result.total_original,
+        desconto: result.desconto,
+      }),
       mensagem,
       whatsapp_url: whatsappUrl(loja.whatsapp, mensagem),
     };
@@ -238,4 +308,11 @@ function savedMessage(loja, p) {
     },
   );
 }
-module.exports = { calculate, createOrder, message, savedMessage, fail };
+module.exports = {
+  calculate,
+  createOrder,
+  quoteCoupon,
+  message,
+  savedMessage,
+  fail,
+};

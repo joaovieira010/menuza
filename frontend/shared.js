@@ -52,6 +52,7 @@ export async function api(path, options = {}) {
   if (!r.ok) {
     const err = new Error(data.erro || "Não foi possível concluir.");
     err.status = r.status;
+    err.code = data.codigo;
     throw err;
   }
   return data;

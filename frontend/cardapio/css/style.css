@@ -475,6 +475,10 @@ dialog::backdrop {
   padding-top: 10px;
   border-top: 1px solid #d9d0e6;
 }
+.total-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 fieldset {
   border: 0;
   padding: 0;
@@ -489,6 +493,21 @@ legend {
   display: grid;
   grid-template-columns: 1fr 2fr;
   gap: 12px;
+}
+.coupon-entry {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+}
+.coupon-entry label {
+  margin: 0;
+}
+#coupon-code {
+  text-transform: uppercase;
+}
+#coupon-error:empty {
+  display: none;
 }
 .privacy {
   font-size: 12px;

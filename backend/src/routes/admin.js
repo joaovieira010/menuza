@@ -35,6 +35,7 @@ router.use(async (req, res, next) => {
   );
   next();
 });
+router.use("/cupons", require("./coupons"));
 router.get("/catalogo", admin.list);
 router.get("/dashboard", admin.dashboard);
 router.get("/pedidos", admin.orders);

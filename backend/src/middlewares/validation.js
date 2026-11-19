@@ -13,6 +13,66 @@ const slug = z
 const text = (max = 120) => z.string().trim().min(1).max(max);
 const optional = (max = 1000) => z.string().trim().max(max).default("");
 const money = z.number().int().min(0).max(10000000);
+const couponCode = z
+  .string({ error: "Informe o código do cupom" })
+  .trim()
+  .regex(
+    /^[A-Za-z0-9_-]{1,40}$/,
+    "Use de 1 a 40 letras, números, hífens ou sublinhados",
+  )
+  .toUpperCase();
+const couponDate = z.iso
+  .datetime({ offset: true, error: "Informe uma data e hora com fuso horário" })
+  .refine((value) => {
+    const year = new Date(value).getUTCFullYear();
+    return year >= 1 && year <= 9999;
+  }, "Informe uma data e hora válidas")
+  .transform((value) => new Date(value).toISOString());
+const activeCoupon = z.object({
+  ativo: z.boolean({ error: "Informe se o cupom está ativo" }),
+});
+const couponAmount = z
+  .int({ error: "Informe um valor com até duas casas decimais" })
+  .max(10000000, "Valor acima do máximo permitido");
+const coupon = activeCoupon
+  .extend({
+    codigo: couponCode,
+    tipo: z.enum(["percentual", "fixo"], {
+      error: "Selecione porcentagem ou valor fixo",
+    }),
+    valor: couponAmount.min(1, "O desconto deve ser maior que zero"),
+    pedido_minimo: couponAmount.min(
+      0,
+      "O pedido mínimo deve ser zero ou maior",
+    ),
+    inicio_em: couponDate,
+    fim_em: couponDate,
+    limite_usos: z
+      .int({ error: "Informe um número inteiro ou deixe o limite em branco" })
+      .min(1, "O limite deve ser de pelo menos uma utilização")
+      .max(2147483647, "Limite acima do máximo permitido")
+      .nullable(),
+  })
+  .refine((value) => value.tipo !== "percentual" || value.valor <= 10000, {
+    path: ["valor"],
+    message: "Informe um percentual maior que zero e de até 100%",
+  })
+  .refine((value) => Date.parse(value.inicio_em) < Date.parse(value.fim_em), {
+    path: ["fim_em"],
+    message: "O encerramento deve ser posterior ao início",
+  });
+const modality = z.enum(["entrega", "retirada"]);
+const orderItems = z
+  .array(
+    z.object({
+      produto_id: id,
+      quantidade: z.number().int().min(1).max(99),
+      adicionais: z.array(id).max(40).default([]),
+      observacao: optional(500),
+    }),
+  )
+  .min(1)
+  .max(50);
 const { normalizePhone } = require("../services/whatsapp");
 const phone = z.string().transform((value, ctx) => {
   try {
@@ -31,6 +91,13 @@ const image = z
   )
   .default("");
 const schemas = {
+  coupon,
+  activeCoupon,
+  couponQuote: z.object({
+    cupom_codigo: couponCode,
+    modalidade: modality,
+    itens: orderItems,
+  }),
   login: z.object({
     email: z
       .string()
@@ -101,7 +168,7 @@ const schemas = {
     .object({
       idempotencia: z.uuid().optional(),
       cliente: z.object({ nome: text(), telefone: phone }),
-      modalidade: z.enum(["entrega", "retirada"]),
+      modalidade: modality,
       forma_pagamento: z.enum(["dinheiro", "pix", "cartao"]),
       troco_para: money.nullable().default(null),
       observacoes: optional(),
@@ -120,17 +187,8 @@ const schemas = {
           complemento: "",
           referencia: "",
         }),
-      itens: z
-        .array(
-          z.object({
-            produto_id: id,
-            quantidade: z.number().int().min(1).max(99),
-            adicionais: z.array(id).max(40).default([]),
-            observacao: optional(500),
-          }),
-        )
-        .min(1)
-        .max(50),
+      itens: orderItems,
+      cupom_codigo: couponCode.optional(),
     })
     .superRefine((v, c) => {
       if (

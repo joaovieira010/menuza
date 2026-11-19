@@ -17,6 +17,9 @@ let menu,
   activeCategory = "",
   productQuantity = 1,
   submitting = false;
+let appliedCoupon = null,
+  couponRequest = null,
+  couponNeedsReview = false;
 const notice = (text) => {
   $("#notice").textContent = text;
 };
@@ -39,6 +42,7 @@ for (const d of document.querySelectorAll("dialog"))
     }
   });
 function persist() {
+  resetCoupon();
   try {
     localStorage.setItem(key, JSON.stringify(cart));
   } catch {
@@ -75,16 +79,26 @@ function updateCart() {
 }
 function totals(
   modality = menu.loja.entrega_ativa === false ? "retirada" : "entrega",
+  quote = null,
 ) {
   const box = el("div", "", "totals"),
-    fee = modality === "entrega" ? menu.loja.taxa_entrega : 0;
+    fee =
+      quote?.taxa_entrega ??
+      (modality === "entrega" ? menu.loja.taxa_entrega : 0),
+    itemsTotal = quote?.subtotal ?? subtotal();
   for (const [name, value] of [
-    ["Subtotal", subtotal()],
-    ["Taxa de entrega", fee],
-    ["Total", subtotal() + fee],
+    ["Subtotal", money(itemsTotal)],
+    ["Taxa de entrega", money(fee)],
+    ...(quote
+      ? [
+          ["Cupom", quote.cupom_codigo],
+          ["Desconto", "- " + money(quote.desconto)],
+        ]
+      : []),
+    ["Total", money(quote?.total ?? itemsTotal + fee)],
   ]) {
     const row = el("div", null, "total-row");
-    row.append(el("span", name), el("span", money(value)));
+    row.append(el("span", name), el("span", value));
     box.append(row);
   }
   return box;
@@ -375,7 +389,7 @@ function showCart() {
         $("#success").hidden = true;
         $("#checkout-error").textContent = "";
         configureModalities();
-        checkoutTotal();
+        renderCheckout();
         $("#checkout-dialog").showModal();
       },
       "primary wide",
@@ -388,6 +402,78 @@ $("#cart-open").addEventListener("click", () => {
 });
 $("#busca").addEventListener("input", renderProducts);
 const form = $("#checkout");
+const couponInput = $("#coupon-code"),
+  couponApply = $("#coupon-apply"),
+  couponRemove = $("#coupon-remove"),
+  couponError = $("#coupon-error"),
+  confirmOrder = $("#confirm-order");
+
+function resetCoupon() {
+  couponRequest?.abort();
+  couponRequest = appliedCoupon = null;
+  couponNeedsReview = false;
+  couponInput.value = "";
+  couponError.textContent = "";
+  renderCheckout();
+}
+
+function renderCheckout() {
+  checkoutTotal(appliedCoupon);
+  couponInput.readOnly = submitting || !!couponRequest || !!appliedCoupon;
+  couponApply.disabled = couponInput.readOnly;
+  couponRemove.hidden = !appliedCoupon && !couponNeedsReview;
+  couponRemove.disabled = submitting;
+  confirmOrder.disabled = submitting || !!couponRequest || couponNeedsReview;
+}
+
+async function applyCoupon() {
+  const code = couponInput.value.trim();
+  if (submitting || !cart.length) return;
+  if (!code) {
+    couponError.textContent = "Informe o código do cupom.";
+    couponInput.focus();
+    return;
+  }
+  couponRequest?.abort();
+  const request = new AbortController();
+  couponRequest = request;
+  couponNeedsReview ||= !!appliedCoupon;
+  appliedCoupon = null;
+  couponError.textContent = "";
+  renderCheckout();
+  try {
+    const quote = await api(encodeURIComponent(slug) + "/cupons/validar", {
+      ...send("POST", {
+        cupom_codigo: code,
+        modalidade: form.elements.modalidade.value,
+        itens: cart,
+      }),
+      signal: request.signal,
+    });
+    if (couponRequest !== request) return;
+    appliedCoupon = quote;
+    couponInput.value = quote.cupom_codigo;
+    couponNeedsReview = false;
+  } catch (error) {
+    if (couponRequest === request) couponError.textContent = error.message;
+  } finally {
+    if (couponRequest === request) {
+      couponRequest = null;
+      renderCheckout();
+    }
+  }
+}
+
+couponApply.addEventListener("click", applyCoupon);
+couponRemove.addEventListener("click", () => {
+  resetCoupon();
+  couponInput.focus();
+});
+couponInput.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  if (!couponApply.disabled) applyCoupon();
+});
 function configureModalities() {
   const select = form.elements.modalidade;
   const previous = select.value;
@@ -404,14 +490,17 @@ function configureModalities() {
   if ([...select.options].some((option) => option.value === previous))
     select.value = previous;
 }
-function checkoutTotal() {
+function checkoutTotal(quote = null) {
   const mode = form.elements.modalidade.value;
   $("#address").hidden = mode !== "entrega";
   for (const name of ["rua", "numero", "bairro"])
     form.elements[name].required = mode === "entrega";
-  $("#checkout-total").replaceChildren(totals(mode));
+  $("#checkout-total").replaceChildren(totals(mode, quote));
 }
-form.elements.modalidade.addEventListener("change", checkoutTotal);
+form.elements.modalidade.addEventListener("change", () => {
+  if (appliedCoupon || couponRequest || couponNeedsReview) applyCoupon();
+  else renderCheckout();
+});
 form.elements.forma_pagamento.addEventListener("change", () => {
   $("#change-label").hidden =
     form.elements.forma_pagamento.value !== "dinheiro";
@@ -419,9 +508,9 @@ form.elements.forma_pagamento.addEventListener("change", () => {
 });
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (submitting || !cart.length) return;
+  if (confirmOrder.disabled || !cart.length) return;
   submitting = true;
-  $("#confirm-order").disabled = true;
+  renderCheckout();
   $("#checkout-error").textContent = "";
   try {
     const f = Object.fromEntries(new FormData(form));
@@ -430,6 +519,7 @@ form.addEventListener("submit", async (event) => {
       menu.loja[`${f.modalidade}_ativa`] === false
     )
       throw new Error("Selecione uma modalidade de recebimento disponível.");
+    form.elements.modalidade.disabled = true;
     const data = {
       cliente: { nome: f.nome, telefone: f.telefone },
       modalidade: f.modalidade,
@@ -444,6 +534,7 @@ form.addEventListener("submit", async (event) => {
         referencia: f.referencia,
       },
       itens: cart,
+      ...(appliedCoupon && { cupom_codigo: appliedCoupon.cupom_codigo }),
     };
     // Repetir após falha de rede conserva a mesma chave e não duplica a gravação.
     const payload = JSON.stringify(data);
@@ -492,10 +583,19 @@ form.addEventListener("submit", async (event) => {
     // O banco confirmou a gravação. O link permanece disponível se o navegador bloquear a janela.
     window.open(order.whatsapp_url, "_blank", "noopener,noreferrer");
   } catch (e) {
-    $("#checkout-error").textContent = e.message;
+    if (e.code === "cupom_invalido" && appliedCoupon) {
+      appliedCoupon = null;
+      couponNeedsReview = true;
+      couponError.textContent =
+        e.message + " Aplique outro cupom ou remova o código para continuar.";
+      couponInput.focus();
+    } else {
+      $("#checkout-error").textContent = e.message;
+    }
   } finally {
     submitting = false;
-    $("#confirm-order").disabled = false;
+    form.elements.modalidade.disabled = false;
+    renderCheckout();
   }
 });
 try {
@@ -528,7 +628,7 @@ try {
     cart = [];
   }
   configureModalities();
-  checkoutTotal();
+  renderCheckout();
   showStore();
   categories();
   renderProducts();

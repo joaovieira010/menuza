@@ -18,6 +18,7 @@ let catalog,
 const sections = {
   dashboard: "Visão geral",
   pedidos: "Pedidos",
+  cupons: "Cupons de desconto",
   categorias: "Categorias",
   produtos: "Produtos",
   adicionais: "Adicionais",
@@ -168,6 +169,7 @@ async function render() {
   view.replaceChildren();
   if (section === "dashboard") await dashboard(view);
   else if (section === "pedidos") await orderView(view);
+  else if (section === "cupons") await couponView(view);
   else if (section === "assinatura") {
     const s = await api("admin/assinatura"),
       box = el("section", null, "box");
@@ -250,6 +252,198 @@ async function dashboard(view) {
     box,
     button("Ver pedidos →", () => action(() => navigate("pedidos")), "primary"),
   );
+}
+const couponDateFormat = new Intl.DateTimeFormat("pt-BR", {
+  dateStyle: "short",
+  timeStyle: "short",
+});
+function localDateInput(value) {
+  const date = new Date(value);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 23);
+}
+async function couponView(view) {
+  const coupons = await api("admin/cupons");
+  const box = el("section", null, "box"),
+    header = el("div", null, "box-header");
+  header.append(
+    el("h2", "Cupons cadastrados"),
+    button("+ Novo cupom", () => editCoupon(), "primary"),
+  );
+  box.append(
+    header,
+    el(
+      "p",
+      "O desconto e o pedido mínimo consideram os itens e adicionais. Pedidos cancelados liberam uma utilização.",
+      "help",
+    ),
+  );
+  if (!coupons.length) box.append(el("p", "Nenhum cupom cadastrado.", "empty"));
+  const status = {
+    ativo: "Ativo",
+    inativo: "Inativo",
+    expirado: "Expirado",
+    agendado: "Agendado",
+    esgotado: "Esgotado",
+  };
+  for (const coupon of coupons) {
+    const row = el("div", null, "record"),
+      info = el("div", null, "coupon-info"),
+      actions = el("div", null, "record-actions"),
+      path = "admin/cupons/" + coupon.id;
+    const discount =
+      coupon.tipo === "percentual"
+        ? (coupon.valor / 100).toLocaleString("pt-BR") + "% de desconto"
+        : money(coupon.valor) + " de desconto fixo";
+    info.append(
+      el("strong", coupon.codigo),
+      el("p", status[coupon.status] + " · " + discount),
+      el(
+        "p",
+        "Validade de " +
+          couponDateFormat.format(new Date(coupon.inicio_em)) +
+          " a " +
+          couponDateFormat.format(new Date(coupon.fim_em)),
+      ),
+      el(
+        "p",
+        `Utilizações: ${coupon.usos} / ${coupon.limite_usos ?? "sem limite"} · Pedido mínimo: ${money(coupon.pedido_minimo)}`,
+      ),
+    );
+    actions.append(
+      button("Editar", () => editCoupon(coupon)),
+      button(coupon.ativo ? "Desativar" : "Ativar", () =>
+        action(async () => {
+          await api(path, send("PATCH", { ativo: !coupon.ativo }));
+          await render();
+          notify(coupon.ativo ? "Cupom desativado." : "Cupom ativado.");
+        }),
+      ),
+      button("Excluir", () =>
+        action(async () => {
+          if (
+            !confirm(
+              `Excluir o cupom “${coupon.codigo}”? O histórico dos pedidos será preservado.`,
+            )
+          )
+            return;
+          await api(path, { method: "DELETE" });
+          await render();
+          notify("Cupom excluído.");
+        }),
+      ),
+    );
+    row.append(info, actions);
+    box.append(row);
+  }
+  view.append(box);
+}
+function editCoupon(coupon = {}) {
+  const form = $("#editor-form");
+  form.replaceChildren();
+  $("#editor-title").textContent = coupon.id ? "Editar cupom" : "Novo cupom";
+  const code = field(form, "codigo", "Código do cupom", "text", coupon.codigo);
+  code.maxLength = 40;
+  code.autocapitalize = "characters";
+  code.spellcheck = false;
+  const type = pick(
+    form,
+    "tipo",
+    "Tipo de desconto",
+    [
+      ["percentual", "Porcentagem"],
+      ["fixo", "Valor fixo"],
+    ],
+    coupon.tipo,
+  );
+  const valueLabel = el("span");
+  const value = input(
+    "valor",
+    "text",
+    coupon.valor ? (coupon.valor / 100).toFixed(2) : "",
+  );
+  const labeledValue = el("label");
+  labeledValue.append(valueLabel, value);
+  form.append(labeledValue);
+  const updateValueLabel = () => {
+    valueLabel.textContent =
+      type.value === "percentual" ? "Desconto (%)" : "Desconto (R$)";
+  };
+  type.addEventListener("change", updateValueLabel);
+  updateValueLabel();
+  value.required = true;
+  const minimum = field(
+    form,
+    "pedido_minimo",
+    "Pedido mínimo (R$)",
+    "text",
+    ((coupon.pedido_minimo ?? 0) / 100).toFixed(2),
+  );
+  for (const amount of [value, minimum]) {
+    amount.inputMode = "decimal";
+    amount.pattern = "[0-9]+([.,][0-9]{1,2})?";
+    amount.title = "Digite um valor com até duas casas decimais.";
+  }
+  const start = field(
+    form,
+    "inicio_em",
+    "Início",
+    "datetime-local",
+    localDateInput(coupon.inicio_em ?? new Date()).slice(
+      0,
+      coupon.id ? 23 : 16,
+    ),
+  );
+  const end = field(
+    form,
+    "fim_em",
+    "Encerramento",
+    "datetime-local",
+    coupon.fim_em ? localDateInput(coupon.fim_em) : "",
+  );
+  start.step = end.step = "any";
+  const originalStart = start.value;
+  const originalEnd = end.value;
+  form.append(
+    el(
+      "p",
+      `Horários em ${couponDateFormat.resolvedOptions().timeZone}.`,
+      "help",
+    ),
+  );
+  const limit = field(
+    form,
+    "limite_usos",
+    "Limite de utilizações (vazio para ilimitado)",
+    "number",
+    coupon.limite_usos ?? "",
+    false,
+  );
+  limit.min = 1;
+  limit.max = 2147483647;
+  check(form, "ativo", "Cupom ativo", coupon.ativo ?? true);
+  openEditor(form, async (f) => {
+    await api(
+      "admin/cupons" + (coupon.id ? "/" + coupon.id : ""),
+      send(coupon.id ? "PUT" : "POST", {
+        codigo: f.codigo,
+        tipo: f.tipo,
+        valor: decimalToCents(f.valor),
+        pedido_minimo: decimalToCents(f.pedido_minimo),
+        inicio_em:
+          coupon.inicio_em && f.inicio_em === originalStart
+            ? coupon.inicio_em
+            : new Date(f.inicio_em).toISOString(),
+        fim_em:
+          coupon.fim_em && f.fim_em === originalEnd
+            ? coupon.fim_em
+            : new Date(f.fim_em).toISOString(),
+        limite_usos: f.limite_usos ? Number(f.limite_usos) : null,
+        ativo: form.elements.ativo.checked,
+      }),
+    );
+  });
 }
 function resourceView(view, resource, title, help) {
   const box = el("section", null, "box"),
@@ -408,18 +602,10 @@ function edit(resource, record = {}) {
     ).inputMode = "decimal";
   }
   check(form, "ativo", "Ativo no cardápio", record.ativo ?? true);
-  const error = el("p", null, "error");
-  error.setAttribute("role", "alert");
-  const submit = el("button", "Salvar", "primary wide");
-  submit.type = "submit";
-  form.append(error, submit);
-  form.onsubmit = async (e) => {
-    e.preventDefault();
-    submit.disabled = true;
-    error.textContent = "";
-    try {
-      const f = Object.fromEntries(new FormData(form)),
-        data = { nome: f.nome, ativo: form.elements.ativo.checked };
+  openEditor(
+    form,
+    async (f) => {
+      const data = { nome: f.nome, ativo: form.elements.ativo.checked };
       if (resource === "categorias") data.ordem = Number(f.ordem);
       if (resource === "produtos")
         Object.assign(data, {
@@ -446,8 +632,24 @@ function edit(resource, record = {}) {
         "admin/" + resource + (record.id ? "/" + record.id : ""),
         send(record.id ? "PUT" : "POST", data),
       );
+    },
+    refreshCatalog,
+  );
+}
+function openEditor(form, save, refresh) {
+  const error = el("p", null, "error");
+  error.setAttribute("role", "alert");
+  const submit = el("button", "Salvar", "primary wide");
+  submit.type = "submit";
+  form.append(error, submit);
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    submit.disabled = true;
+    error.textContent = "";
+    try {
+      await save(Object.fromEntries(new FormData(form)));
       $("#editor").close();
-      await refreshCatalog();
+      await refresh?.();
       await render();
       notify("Alterações salvas.");
     } catch (e) {
@@ -652,6 +854,15 @@ async function orderView(view) {
             ? "Entrega em domicílio · Taxa: " + money(p.taxa_entrega)
             : "Retirada no estabelecimento"),
       ),
+      ...(p.cupom_codigo
+        ? [
+            el("p", "Valor original: " + money(p.total_original)),
+            el(
+              "p",
+              `Cupom ${p.cupom_codigo} · Desconto de ${money(p.desconto)}`,
+            ),
+          ]
+        : []),
       el("div", money(p.total), "order-total"),
     );
     if (p.observacoes) card.append(el("p", "Observações: " + p.observacoes));
