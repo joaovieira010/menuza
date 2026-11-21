@@ -214,6 +214,7 @@ async function main() {
       .locator("#editor")
       .getByLabel("Nome", { exact: true })
       .fill("Lanche Navegador");
+    await admin.getByRole("checkbox", { name: "Lanches QA" }).check();
     await admin
       .getByLabel("Preço em reais (ex.: 28,90)", { exact: true })
       .fill("25,00");
@@ -222,6 +223,70 @@ async function main() {
       .getByRole("button", { name: "Salvar", exact: true })
       .click();
     await admin.locator("#editor").waitFor({ state: "hidden" });
+    await owner
+      .locator(`[data-store-id="${loja.id}"]`)
+      .getByRole("button", { name: "Gerenciar cardápio" })
+      .click();
+    await owner
+      .getByRole("button", { name: "+ Adicionar", exact: true })
+      .click();
+    await dialog.getByLabel("Nome", { exact: true }).fill("Promoções QA");
+    await dialog.getByRole("button", { name: "Salvar", exact: true }).click();
+    await dialog.waitFor({ state: "hidden" });
+    await owner.getByRole("button", { name: "Produtos", exact: true }).click();
+    await owner.getByRole("button", { name: "Editar", exact: true }).click();
+    assert(
+      await dialog.getByRole("checkbox", { name: "Lanches QA" }).isChecked(),
+    );
+    await dialog.getByRole("checkbox", { name: "Promoções QA" }).check();
+    assert(
+      await dialog.evaluate(
+        (editor) => editor.scrollWidth <= editor.clientWidth,
+      ),
+    );
+    await dialog.getByRole("button", { name: "Salvar", exact: true }).click();
+    await dialog.waitFor({ state: "hidden" });
+    await owner
+      .getByRole("button", { name: "Adicionais", exact: true })
+      .click();
+    await owner
+      .locator(".box")
+      .filter({
+        has: owner.getByRole("heading", {
+          name: "Grupos de opções",
+          exact: true,
+        }),
+      })
+      .getByRole("button", { name: "+ Adicionar", exact: true })
+      .click();
+    await dialog.getByLabel("Nome", { exact: true }).fill("Complementos QA");
+    await dialog
+      .getByLabel("Produto específico (opcional)")
+      .selectOption({ label: "Lanche Navegador" });
+    await dialog.getByRole("checkbox", { name: "Lanches QA" }).check();
+    await dialog.getByRole("checkbox", { name: "Promoções QA" }).check();
+    await dialog.getByRole("button", { name: "Salvar", exact: true }).click();
+    await dialog.waitFor({ state: "hidden" });
+    await owner
+      .locator(".box")
+      .filter({
+        has: owner.getByRole("heading", {
+          name: "Opções adicionais",
+          exact: true,
+        }),
+      })
+      .getByRole("button", { name: "+ Adicionar", exact: true })
+      .click();
+    await dialog.getByLabel("Nome", { exact: true }).fill("Molho QA");
+    await dialog.getByLabel("Disponibilidade").selectOption("categorias");
+    await dialog.getByRole("checkbox", { name: "Lanches QA" }).check();
+    await dialog.getByRole("checkbox", { name: "Promoções QA" }).check();
+    await dialog.getByLabel("Preço em reais (ex.: 28,90)").fill("1,50");
+    await dialog.getByRole("button", { name: "Salvar", exact: true }).click();
+    await dialog.waitFor({ state: "hidden" });
+    await owner
+      .getByRole("button", { name: "Voltar aos estabelecimentos" })
+      .click();
     await admin
       .getByRole("button", { name: "Minha loja", exact: true })
       .click();
@@ -238,9 +303,16 @@ async function main() {
     const customer = await context.newPage();
     await customer.setViewportSize({ width: 390, height: 844 });
     await customer.goto(env.origin + "/" + loja.slug);
+    const items = customer.getByRole("button", {
+      name: /Personalizar Lanche Navegador/,
+    });
+    await items.nth(1).waitFor();
+    assert.equal(await items.count(), 2);
     await customer
-      .getByRole("button", { name: /Personalizar Lanche Navegador/ })
+      .getByRole("button", { name: "Promoções QA", exact: true })
       .click();
+    await items.click();
+    await customer.getByRole("checkbox", { name: /Molho QA/ }).waitFor();
     await customer.getByRole("button", { name: /Adicionar ao pedido/ }).click();
     await customer.getByRole("button", { name: /Ver meu pedido/ }).click();
     await customer

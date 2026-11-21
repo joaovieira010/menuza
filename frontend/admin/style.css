@@ -479,3 +479,29 @@
   display: inline-block;
   margin-top: 12px;
 }
+.category-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: 0.25rem 0.75rem;
+  min-inline-size: 0;
+  max-block-size: 15rem;
+  overflow-y: auto;
+}
+.category-choices[hidden] {
+  display: none;
+}
+#editor-form .category-choices label {
+  flex-direction: row;
+  justify-content: flex-start;
+  min-block-size: 44px;
+  margin: 0;
+  padding: 0.25rem;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+#editor-form .category-choices input[type="checkbox"] {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: 0 0 auto;
+  margin: 0;
+}

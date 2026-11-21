@@ -1,3 +1,34 @@
+const linkedCategories = (table) => `ARRAY(
+  SELECT categoria_id FROM ${table} WHERE estabelecimento_id=r.estabelecimento_id
+    AND registro_id=r.id ORDER BY categoria_id
+)`;
+
+function categoryIds(record, links = []) {
+  if (record.herda_categorias && !links.length) return null;
+  return [...new Set([record.categoria_id, ...links].filter(Boolean))];
+}
+
+function groupsForCategory(groups, product, categoryId) {
+  const applicable = [];
+  for (const group of groups) {
+    const groupApplies =
+      group.produto_id === product.id ||
+      group.categoria_ids.includes(categoryId);
+    const options = group.adicionais.filter(
+      (extra) =>
+        (extra.herda_categorias && groupApplies) ||
+        extra.categoria_ids?.includes(categoryId),
+    );
+    if (groupApplies || options.length)
+      applicable.push({
+        ...group,
+        minimo: groupApplies ? group.minimo : 0,
+        adicionais: options,
+      });
+  }
+  return applicable;
+}
+
 async function catalog(db, loja, admin = false) {
   const tid = loja.id;
   let extrasEnabled = true;
@@ -14,24 +45,49 @@ async function catalog(db, loja, admin = false) {
     `SELECT * FROM categorias WHERE estabelecimento_id=$1 ${admin ? "" : "AND ativo=true"} ORDER BY ordem,id`,
     [tid],
   );
-  const { rows: produtos } = await db.query(
-    `SELECT p.* FROM produtos p JOIN categorias c ON c.id=p.categoria_id AND c.estabelecimento_id=p.estabelecimento_id WHERE p.estabelecimento_id=$1 ${admin ? "" : "AND p.ativo=true AND c.ativo=true"} ORDER BY p.id`,
+  const { rows: productRows } = await db.query(
+    `SELECT r.*, ${linkedCategories("produtos_categorias")} AS categoria_ids
+     FROM produtos r WHERE estabelecimento_id=$1 ${admin ? "" : "AND ativo=true"} ORDER BY id`,
     [tid],
   );
   const { rows: grupos } = await db.query(
-    `SELECT * FROM grupos_adicionais WHERE estabelecimento_id=$1 ${admin ? "" : "AND ativo=true"} ORDER BY id`,
+    `SELECT r.*, ${linkedCategories("grupos_categorias")} AS categoria_ids
+     FROM grupos_adicionais r WHERE estabelecimento_id=$1 ${admin ? "" : "AND ativo=true"} ORDER BY id`,
     [tid],
   );
   const { rows: adicionais } = await db.query(
-    `SELECT * FROM adicionais WHERE estabelecimento_id=$1 ${admin ? "" : "AND ativo=true"} ORDER BY id`,
+    `SELECT r.*, ${linkedCategories("adicionais_categorias")} AS categoria_ids
+     FROM adicionais r WHERE estabelecimento_id=$1 ${admin ? "" : "AND ativo=true"} ORDER BY id`,
     [tid],
   );
-  for (const g of grupos)
+  for (const extra of adicionais)
+    extra.categoria_ids = categoryIds(extra, extra.categoria_ids);
+  for (const g of grupos) {
+    g.categoria_ids = categoryIds(g, g.categoria_ids);
     g.adicionais = adicionais.filter((a) => a.grupo_id === g.id);
-  for (const p of produtos)
-    p.grupos = (extrasEnabled ? grupos : []).filter(
-      (g) => g.produto_id === p.id || g.categoria_id === p.categoria_id,
+  }
+  const visibleCategories = new Set(categorias.map((c) => c.id));
+  const availableGroups = extrasEnabled ? grupos : [];
+  const produtos = productRows.filter((p) => {
+    p.categoria_ids = categoryIds(p, p.categoria_ids).filter((categoryId) =>
+      visibleCategories.has(categoryId),
     );
+    p.categoria_id = p.categoria_ids[0] ?? null;
+    if (!admin && !p.categoria_id) return false;
+    p.grupos = p.categoria_id
+      ? groupsForCategory(availableGroups, p, p.categoria_id)
+      : [];
+    if (!admin && p.categoria_ids.length > 1)
+      p.grupos_por_categoria = Object.fromEntries(
+        p.categoria_ids
+          .slice(1)
+          .map((categoryId) => [
+            categoryId,
+            groupsForCategory(availableGroups, p, categoryId),
+          ]),
+      );
+    return true;
+  });
   // O contador é interno e nunca deve ser enviado ao cliente.
   const fields = [
     "id",
@@ -59,3 +115,4 @@ async function catalog(db, loja, admin = false) {
   };
 }
 module.exports = catalog;
+module.exports.categoryIds = categoryIds;

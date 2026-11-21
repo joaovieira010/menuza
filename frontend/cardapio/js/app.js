@@ -55,6 +55,9 @@ function persist() {
 function current(item) {
   return menu.produtos.find((p) => p.id === item.produto_id);
 }
+function productGroups(product, categoryId) {
+  return product.grupos_por_categoria?.[categoryId] ?? product.grupos;
+}
 function unit(item) {
   const p = current(item);
   return p
@@ -62,8 +65,9 @@ function unit(item) {
         item.adicionais.reduce(
           (n, id) =>
             n +
-            (p.grupos.flatMap((g) => g.adicionais).find((a) => a.id === id)
-              ?.preco || 0),
+            (productGroups(p, item.categoria_id)
+              .flatMap((g) => g.adicionais)
+              .find((a) => a.id === id)?.preco || 0),
           0,
         )
     : 0;
@@ -189,7 +193,7 @@ function renderProducts() {
     if (activeCategory && activeCategory !== c.id) continue;
     const products = menu.produtos.filter(
       (p) =>
-        p.categoria_id === c.id &&
+        (p.categoria_ids ?? [p.categoria_id]).includes(c.id) &&
         (p.nome + " " + p.descricao).toLocaleLowerCase("pt-BR").includes(query),
     );
     if (!products.length) continue;
@@ -199,7 +203,7 @@ function renderProducts() {
       grid = el("div", null, "product-grid");
     heading.append(el("h2", c.nome), el("span", products.length + " opções"));
     for (const p of products) {
-      const card = button("", () => openProduct(p), "product-card"),
+      const card = button("", () => openProduct(p, c.id), "product-card"),
         copy = el("div"),
         thumb = el("div", null, "product-thumb");
       card.setAttribute(
@@ -226,8 +230,9 @@ function renderProducts() {
       el("p", "Nenhum produto encontrado. Tente outra busca.", "muted"),
     );
 }
-function openProduct(p) {
+function openProduct(p, categoryId) {
   const d = $("#product-content");
+  const groups = productGroups(p, categoryId);
   d.replaceChildren();
   productQuantity = 1;
   const selected = new Set(),
@@ -252,7 +257,7 @@ function openProduct(p) {
     add = button(
       "",
       () => {
-        for (const g of p.grupos) {
+        for (const g of groups) {
           const count = g.adicionais.filter((a) => selected.has(a.id)).length;
           if (count < g.minimo || count > g.maximo) {
             error.textContent = `Em ${g.nome}, escolha entre ${g.minimo} e ${g.maximo}.`;
@@ -265,6 +270,7 @@ function openProduct(p) {
         }
         cart.push({
           produto_id: p.id,
+          categoria_id: categoryId,
           quantidade: productQuantity,
           adicionais: [...selected],
           observacao: obs.value.trim(),
@@ -279,14 +285,14 @@ function openProduct(p) {
       "Adicionar ao pedido · " +
       money(
         (p.preco +
-          p.grupos
+          groups
             .flatMap((g) => g.adicionais)
             .filter((a) => selected.has(a.id))
             .reduce((n, a) => n + a.preco, 0)) *
           productQuantity,
       );
   }
-  for (const g of p.grupos) {
+  for (const g of groups) {
     const group = el("fieldset", null, "extra-group");
     group.append(
       el("legend", g.nome),
@@ -339,7 +345,7 @@ function showCart() {
       el("strong", p.nome),
       el("strong", money(unit(i) * i.quantidade)),
     );
-    const extras = p.grupos
+    const extras = productGroups(p, i.categoria_id)
       .flatMap((g) => g.adicionais)
       .filter((a) => i.adicionais.includes(a.id))
       .map((a) => a.nome);
@@ -603,27 +609,29 @@ try {
   try {
     const saved = JSON.parse(localStorage.getItem(key) || "[]");
     if (Array.isArray(saved))
-      cart = saved
-        .slice(0, 50)
-        .filter(
-          (i) =>
-            i &&
-            Number.isInteger(i.quantidade) &&
-            i.quantidade > 0 &&
-            i.quantidade <= 99 &&
-            Array.isArray(i.adicionais) &&
-            typeof i.observacao === "string" &&
-            i.observacao.length <= 500 &&
-            menu.produtos.some(
-              (p) =>
-                p.id === i.produto_id &&
-                i.adicionais.every((id) =>
-                  p.grupos
-                    .flatMap((g) => g.adicionais)
-                    .some((a) => a.id === id),
-                ),
-            ),
-        );
+      cart = saved.slice(0, 50).filter(
+        (i) =>
+          i &&
+          Number.isInteger(i.quantidade) &&
+          i.quantidade > 0 &&
+          i.quantidade <= 99 &&
+          Array.isArray(i.adicionais) &&
+          typeof i.observacao === "string" &&
+          i.observacao.length <= 500 &&
+          menu.produtos.some(
+            (p) =>
+              p.id === i.produto_id &&
+              (i.categoria_id === undefined ||
+                (p.categoria_ids ?? [p.categoria_id]).includes(
+                  i.categoria_id,
+                )) &&
+              i.adicionais.every((id) =>
+                productGroups(p, i.categoria_id)
+                  .flatMap((g) => g.adicionais)
+                  .some((a) => a.id === id),
+              ),
+          ),
+      );
   } catch {
     cart = [];
   }

@@ -9,12 +9,15 @@ import {
   money,
   decimalToCents,
 } from "/assets/shared.js";
+import { renderCatalog } from "/assets/admin/catalog.js";
 const $ = (s) => document.querySelector(s),
   endpoint = "superadmin/";
 const call = (p, o) => api(endpoint + p, o);
 let section = "dashboard",
   plans = [],
-  busy = false;
+  busy = false,
+  catalogStore = null,
+  catalogSection = "categorias";
 const names = {
   dashboard: "Visão geral",
   lojas: "Estabelecimentos",
@@ -99,6 +102,7 @@ for (const [k, n] of Object.entries(names))
     button(n, () =>
       action(async () => {
         section = k;
+        catalogStore = null;
         await render();
       }),
     ),
@@ -174,6 +178,10 @@ async function render() {
     return;
   }
   if (section === "lojas") {
+    if (catalogStore) {
+      await storeCatalog(view);
+      return;
+    }
     const f = el("form", null, "filters");
     field(f, "busca", "Buscar pelo nome", "search", "", false);
     pick(f, "situacao", "Situação", [
@@ -198,6 +206,7 @@ async function render() {
       for (const l of rows) {
         const card = el("article", null, "box"),
           link = el("a", location.origin + "/" + l.slug);
+        card.dataset.storeId = l.id;
         link.href = "/" + l.slug;
         link.target = "_blank";
         link.rel = "noopener";
@@ -218,6 +227,13 @@ async function render() {
         const actions = el("div", null, "record-actions");
         actions.append(
           button("Editar", () => storeEditor(l)),
+          button("Gerenciar cardápio", () =>
+            action(async () => {
+              catalogStore = l;
+              catalogSection = "categorias";
+              await render();
+            }),
+          ),
           button("Histórico e assinatura", () => action(() => history(l))),
           button("Registrar pagamento", () => payment(l)),
         );
@@ -375,6 +391,50 @@ async function render() {
       ),
     );
   view.append(box);
+}
+async function storeCatalog(view) {
+  const endpoint = `superadmin/lojas/${catalogStore.id}/cardapio`;
+  $("#page-title").textContent = "Cardápio da loja";
+  const header = el("section", null, "box");
+  const nav = el("nav", null, "record-actions");
+  nav.setAttribute("aria-label", "Seções do cardápio da loja");
+  header.append(
+    button("Voltar aos estabelecimentos", () =>
+      action(async () => {
+        catalogStore = null;
+        await render();
+      }),
+    ),
+    el("h2", catalogStore.nome),
+    nav,
+  );
+  for (const [section, title] of [
+    ["categorias", "Categorias"],
+    ["produtos", "Produtos"],
+    ["adicionais", "Adicionais"],
+  ]) {
+    const tab = button(
+      title,
+      () =>
+        action(async () => {
+          catalogSection = section;
+          await render();
+        }),
+      section === catalogSection ? "primary" : "",
+    );
+    tab.setAttribute("aria-pressed", String(section === catalogSection));
+    nav.append(tab);
+  }
+  view.append(header);
+  const catalog = await api(endpoint + "/catalogo");
+  renderCatalog(view, catalogSection, {
+    catalog,
+    endpoint,
+    action,
+    notify,
+    refresh: render,
+    editor,
+  });
 }
 function storeEditor(l) {
   editor(

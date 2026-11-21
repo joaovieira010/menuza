@@ -133,6 +133,16 @@ router.post(
 router.use(sessions.auth("SUPERADMIN"));
 router.post("/logout", sessions.logout("SUPERADMIN"));
 router.get("/me", (req, res) => res.json(req.user));
+router.use(
+  "/lojas/:lojaId/cardapio",
+  async (req, res, next) => {
+    req.catalogStoreId = parse(id, req.params.lojaId);
+    req.subscription = await subscription(pool, req.catalogStoreId);
+    if (!req.subscription) fail("Estabelecimento não encontrado.", 404);
+    next();
+  },
+  require("./catalog-admin"),
+);
 router.get("/dashboard", async (req, res) => {
   const {
     rows: [stats],

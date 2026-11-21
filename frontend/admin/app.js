@@ -1,16 +1,21 @@
 import {
   el,
   button,
-  label,
   input,
-  select,
   api,
   send,
   money,
-  image,
   decimalToCents,
   statuses,
 } from "/assets/shared.js";
+import { renderCatalog } from "/assets/admin/catalog.js";
+import {
+  check,
+  field,
+  pick,
+  textarea,
+  uploadField,
+} from "/assets/admin/fields.js";
 const $ = (s) => document.querySelector(s);
 let catalog,
   section = "dashboard",
@@ -39,73 +44,6 @@ async function action(work) {
   } finally {
     busy = false;
   }
-}
-function field(form, name, text, type = "text", value = "", required = true) {
-  const n = input(name, type, value);
-  n.required = required;
-  form.append(label(text, n));
-  return n;
-}
-function check(form, name, text, value) {
-  const n = input(name, "checkbox");
-  n.checked = value;
-  const l = label(text, n);
-  l.className = "extra-option";
-  form.append(l);
-  return n;
-}
-function pick(form, name, text, options, value) {
-  const n = select(name, options, value);
-  n.required = true;
-  form.append(label(text, n));
-  return n;
-}
-function textarea(form, name, text, value, max = 1000) {
-  const n = el("textarea");
-  n.name = name;
-  n.value = value || "";
-  n.maxLength = max;
-  n.rows = 3;
-  form.append(label(text, n));
-  return n;
-}
-function uploadField(form, name, text, value) {
-  const hidden = input(name, "hidden", value || ""),
-    preview = image(value, "Prévia da imagem", "product-editor-preview"),
-    file = input("arquivo", "file");
-  file.accept = "image/png,image/jpeg,image/webp";
-  file.required = false;
-  const status = el("p", "", "muted");
-  form.append(
-    hidden,
-    preview,
-    label(text + " (PNG, JPEG ou WebP; até 2 MB)", file),
-    status,
-  );
-  file.addEventListener("change", async () => {
-    if (!file.files[0]) return;
-    status.textContent = "Enviando…";
-    const submit = (form.closest("form") || form).querySelector(
-      "button[type=submit]",
-    );
-    if (submit) submit.disabled = true;
-    try {
-      if (file.files[0].size > 2 * 1024 * 1024)
-        throw new Error("O limite é 2 MB.");
-      const data = new FormData();
-      data.append("imagem", file.files[0]);
-      const result = await api("admin/upload", { method: "POST", body: data });
-      hidden.value = result.url;
-      preview.src = result.url;
-      status.textContent = "Imagem enviada. Salve para aplicar.";
-    } catch (e) {
-      status.textContent = e.message;
-      file.value = "";
-    } finally {
-      if (submit) submit.disabled = false;
-    }
-  });
-  return hidden;
 }
 async function refreshCatalog() {
   catalog = await api("admin/catalogo");
@@ -201,15 +139,24 @@ async function render() {
     );
     view.append(box);
   } else if (section === "configuracoes") settings(view);
-  else if (section === "adicionais") {
-    resourceView(
-      view,
-      "grupos",
-      "Grupos de opções",
-      "Os grupos podem atender um produto ou todos os produtos de uma categoria. Cada opção pode ser escolhida uma vez por item.",
-    );
-    resourceView(view, "adicionais", "Opções adicionais");
-  } else resourceView(view, section, sections[section]);
+  else
+    renderCatalog(view, section, {
+      catalog,
+      endpoint: "admin",
+      action,
+      notify,
+      refresh: async () => {
+        await refreshCatalog();
+        await render();
+      },
+      editor: (title, build, save) => {
+        const form = $("#editor-form");
+        form.replaceChildren();
+        $("#editor-title").textContent = title;
+        build(form);
+        openEditor(form, () => save(form), refreshCatalog);
+      },
+    });
 }
 async function dashboard(view) {
   const data = await api("admin/dashboard"),
@@ -226,7 +173,9 @@ async function dashboard(view) {
       catalog.produtos.filter(
         (p) =>
           p.ativo &&
-          catalog.categorias.some((c) => c.id === p.categoria_id && c.ativo),
+          catalog.categorias.some(
+            (c) => p.categoria_ids.includes(c.id) && c.ativo,
+          ),
       ).length,
       "Produtos disponíveis",
     ],
@@ -444,197 +393,6 @@ function editCoupon(coupon = {}) {
       }),
     );
   });
-}
-function resourceView(view, resource, title, help) {
-  const box = el("section", null, "box"),
-    header = el("div", null, "box-header");
-  header.append(
-    el("h2", title),
-    button("+ Adicionar", () => edit(resource), "primary"),
-  );
-  box.append(header);
-  if (help) box.append(el("p", help, "help"));
-  const rows = catalog[resource] || [];
-  if (!rows.length)
-    box.append(
-      el(
-        "p",
-        "Nenhum registro por enquanto. Use “Adicionar” para começar.",
-        "empty",
-      ),
-    );
-  for (const r of rows) {
-    const row = el("div", null, "record" + (!r.ativo ? " inactive" : "")),
-      info = el("div", null, "record-info"),
-      copy = el("div");
-    copy.append(el("strong", r.nome));
-    let desc = r.ativo ? "Ativo" : "Desativado";
-    if (resource === "produtos")
-      desc =
-        money(r.preco) +
-        " · " +
-        catalog.categorias.find((c) => c.id === r.categoria_id)?.nome +
-        " · " +
-        desc;
-    if (resource === "grupos")
-      desc =
-        `${r.minimo} a ${r.maximo} opções · ` +
-        (r.produto_id
-          ? catalog.produtos.find((p) => p.id === r.produto_id)?.nome
-          : catalog.categorias.find((c) => c.id === r.categoria_id)?.nome) +
-        " · " +
-        desc;
-    if (resource === "adicionais")
-      desc =
-        money(r.preco) +
-        " · " +
-        catalog.grupos.find((g) => g.id === r.grupo_id)?.nome +
-        " · " +
-        desc;
-    copy.append(el("p", desc));
-    if (resource === "produtos") info.append(image(r.imagem_url, r.nome));
-    info.append(copy);
-    const actions = el("div", null, "record-actions");
-    actions.append(button("Editar", () => edit(resource, r)));
-    if (r.ativo)
-      actions.append(
-        button("Desativar", () =>
-          action(async () => {
-            if (
-              !confirm(
-                `Desativar “${r.nome}”? O histórico de pedidos será preservado.`,
-              )
-            )
-              return;
-            await api(`admin/${resource}/${r.id}`, { method: "DELETE" });
-            await refreshCatalog();
-            await render();
-            notify("Registro desativado.");
-          }),
-        ),
-      );
-    row.append(info, actions);
-    box.append(row);
-  }
-  view.append(box);
-}
-function edit(resource, record = {}) {
-  const form = $("#editor-form");
-  form.replaceChildren();
-  $("#editor-title").textContent =
-    (record.id ? "Editar" : "Adicionar") +
-    " " +
-    {
-      categorias: "categoria",
-      produtos: "produto",
-      grupos: "grupo",
-      adicionais: "adicional",
-    }[resource];
-  field(form, "nome", "Nome", "text", record.nome || "").maxLength = 120;
-  if (resource === "categorias") {
-    const n = field(
-      form,
-      "ordem",
-      "Ordem de exibição",
-      "number",
-      record.ordem || 0,
-    );
-    n.min = 0;
-    n.max = 9999;
-  }
-  if (resource === "produtos") {
-    pick(
-      form,
-      "categoria_id",
-      "Categoria",
-      catalog.categorias.map((c) => [c.id, c.nome]),
-      record.categoria_id,
-    );
-    textarea(form, "descricao", "Descrição", record.descricao);
-    field(
-      form,
-      "preco",
-      "Preço em reais (ex.: 28,90)",
-      "text",
-      record.preco !== undefined ? (record.preco / 100).toFixed(2) : "",
-    ).inputMode = "decimal";
-    uploadField(form, "imagem_url", "Foto do produto", record.imagem_url);
-  }
-  if (resource === "grupos") {
-    const options = [
-      ...catalog.categorias.map((c) => ["c:" + c.id, "Categoria: " + c.nome]),
-      ...catalog.produtos.map((p) => ["p:" + p.id, "Produto: " + p.nome]),
-    ];
-    pick(
-      form,
-      "vinculo",
-      "Aplicar a",
-      options,
-      record.produto_id
-        ? "p:" + record.produto_id
-        : record.categoria_id
-          ? "c:" + record.categoria_id
-          : undefined,
-    );
-    for (const [name, title, def] of [
-      ["minimo", "Mínimo de opções (0 = opcional)", 0],
-      ["maximo", "Máximo de opções", 5],
-    ]) {
-      const n = field(form, name, title, "number", record[name] ?? def);
-      n.min = 0;
-      n.max = 20;
-    }
-  }
-  if (resource === "adicionais") {
-    pick(
-      form,
-      "grupo_id",
-      "Grupo",
-      catalog.grupos.map((g) => [g.id, g.nome]),
-      record.grupo_id,
-    );
-    field(
-      form,
-      "preco",
-      "Preço em reais",
-      "text",
-      record.preco !== undefined ? (record.preco / 100).toFixed(2) : "",
-    ).inputMode = "decimal";
-  }
-  check(form, "ativo", "Ativo no cardápio", record.ativo ?? true);
-  openEditor(
-    form,
-    async (f) => {
-      const data = { nome: f.nome, ativo: form.elements.ativo.checked };
-      if (resource === "categorias") data.ordem = Number(f.ordem);
-      if (resource === "produtos")
-        Object.assign(data, {
-          categoria_id: Number(f.categoria_id),
-          descricao: f.descricao,
-          preco: decimalToCents(f.preco),
-          imagem_url: f.imagem_url,
-        });
-      if (resource === "grupos") {
-        const [type, id] = f.vinculo.split(":");
-        Object.assign(data, {
-          produto_id: type === "p" ? Number(id) : null,
-          categoria_id: type === "c" ? Number(id) : null,
-          minimo: Number(f.minimo),
-          maximo: Number(f.maximo),
-        });
-      }
-      if (resource === "adicionais")
-        Object.assign(data, {
-          grupo_id: Number(f.grupo_id),
-          preco: decimalToCents(f.preco),
-        });
-      await api(
-        "admin/" + resource + (record.id ? "/" + record.id : ""),
-        send(record.id ? "PUT" : "POST", data),
-      );
-    },
-    refreshCatalog,
-  );
 }
 function openEditor(form, save, refresh) {
   const error = el("p", null, "error");

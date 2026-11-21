@@ -17,16 +17,25 @@ function calculateBase(data, menu) {
       (p) => String(p.id) === String(item.produto_id),
     );
     if (!product) fail("Produto indisponível neste estabelecimento.");
+    const categoryId = String(item.categoria_id ?? product.categoria_id);
+    if (
+      item.categoria_id !== undefined &&
+      !(product.categoria_ids ?? [product.categoria_id]).some(
+        (id) => String(id) === categoryId,
+      )
+    )
+      fail("Produto indisponível nesta categoria.");
+    const groups = product.grupos_por_categoria?.[categoryId] ?? product.grupos;
     if (new Set(item.adicionais.map(String)).size !== item.adicionais.length)
       fail("Adicional repetido.");
     const extras = item.adicionais.map((id) => {
-      const a = product.grupos
+      const a = groups
         .flatMap((g) => g.adicionais)
         .find((a) => String(a.id) === String(id));
       if (!a) fail("Adicional indisponível para este produto.");
       return a;
     });
-    for (const g of product.grupos) {
+    for (const g of groups) {
       const count = extras.filter(
         (a) => String(a.grupo_id) === String(g.id),
       ).length;

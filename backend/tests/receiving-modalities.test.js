@@ -43,9 +43,19 @@ function database(flags = {}) {
       if (sql.includes("FROM estabelecimentos")) return { rows: [store] };
       if (sql.includes("SELECT p.adicionais"))
         return { rows: [{ adicionais: true }] };
-      if (sql.startsWith("SELECT p.* FROM produtos"))
+      if (sql.startsWith("SELECT * FROM categorias"))
+        return { rows: [{ id: "1" }] };
+      if (sql.includes("FROM produtos r WHERE"))
         return {
-          rows: [{ id: 1, nome: "Produto QA", preco: 1000, grupos: [] }],
+          rows: [
+            {
+              id: "1",
+              nome: "Produto QA",
+              preco: 1000,
+              categoria_id: "1",
+              categoria_ids: [],
+            },
+          ],
         };
       if (/^INSERT INTO (clientes|pedidos|itens_pedido)\(/.test(sql))
         return { rows: [{ id: "1" }] };

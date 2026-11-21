@@ -13,6 +13,7 @@ const slug = z
 const text = (max = 120) => z.string().trim().min(1).max(max);
 const optional = (max = 1000) => z.string().trim().max(max).default("");
 const money = z.number().int().min(0).max(10000000);
+const categoryIds = z.array(id).transform((ids) => [...new Set(ids)]);
 const couponCode = z
   .string({ error: "Informe o código do cupom" })
   .trim()
@@ -66,6 +67,7 @@ const orderItems = z
   .array(
     z.object({
       produto_id: id,
+      categoria_id: id.optional(),
       quantidade: z.number().int().min(1).max(99),
       adicionais: z.array(id).max(40).default([]),
       observacao: optional(500),
@@ -118,30 +120,48 @@ const schemas = {
     nome: text(),
     ordem: z.number().int().min(0).max(9999).default(0),
     ativo: z.boolean().default(true),
+    vinculos: z
+      .object({
+        produtos: categoryIds.optional(),
+        grupos: categoryIds.optional(),
+        adicionais: categoryIds.optional(),
+      })
+      .optional(),
   }),
-  produto: z.object({
-    categoria_id: id,
-    nome: text(),
-    descricao: optional(),
-    preco: money,
-    ativo: z.boolean().default(true),
-    imagem_url: image,
-  }),
+  produto: z
+    .object({
+      categoria_id: id.optional(),
+      categoria_ids: categoryIds.optional(),
+      nome: text(),
+      descricao: optional(),
+      preco: money,
+      ativo: z.boolean().default(true),
+      imagem_url: image,
+    })
+    .refine(
+      (v) => v.categoria_ids !== undefined || v.categoria_id !== undefined,
+      "Informe as categorias do produto",
+    ),
   grupo: z
     .object({
       nome: text(),
       produto_id: id.nullable().default(null),
       categoria_id: id.nullable().default(null),
+      categoria_ids: categoryIds.optional(),
       minimo: z.number().int().min(0).max(20).default(0),
       maximo: z.number().int().min(0).max(20).default(5),
       ativo: z.boolean().default(true),
     })
     .refine(
-      (v) => !!v.produto_id !== !!v.categoria_id && v.maximo >= v.minimo,
-      "Selecione produto OU categoria e limites válidos",
+      (v) =>
+        v.maximo >= v.minimo &&
+        (v.categoria_ids !== undefined || !!v.produto_id !== !!v.categoria_id),
+      "Informe os vínculos e limites válidos do grupo",
     ),
   adicional: z.object({
     grupo_id: id,
+    categoria_ids: categoryIds.nullable().optional(),
+    herdar_categorias: z.boolean().optional(),
     nome: text(),
     preco: money,
     ativo: z.boolean().default(true),

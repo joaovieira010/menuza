@@ -10,63 +10,196 @@ const catalog = require("../services/catalog");
 // Nomes SQL vêm apenas desta lista fixa; valores são sempre parâmetros.
 const resources = {
   categorias: { schema: "categoria", table: "categorias" },
-  produtos: { schema: "produto", table: "produtos" },
-  grupos: { schema: "grupo", table: "grupos_adicionais" },
-  adicionais: { schema: "adicional", table: "adicionais" },
+  produtos: {
+    schema: "produto",
+    table: "produtos",
+    links: "produtos_categorias",
+    primaryCategory: true,
+  },
+  grupos: {
+    schema: "grupo",
+    table: "grupos_adicionais",
+    links: "grupos_categorias",
+    primaryCategory: true,
+  },
+  adicionais: {
+    schema: "adicional",
+    table: "adicionais",
+    links: "adicionais_categorias",
+  },
 };
-async function ownRelation(tid, table, value) {
-  if (value !== null && value !== undefined) {
-    const r = await pool.query(
-      `SELECT id FROM ${table} WHERE estabelecimento_id=$1 AND id=$2`,
-      [tid, value],
+async function ownRelations(db, tid, table, ids) {
+  if (!ids.length) return;
+  const r = await db.query(
+    `SELECT id FROM ${table} WHERE estabelecimento_id=$1 AND id=ANY($2::bigint[])`,
+    [tid, ids],
+  );
+  if (r.rowCount !== ids.length) fail("Vínculo não encontrado nesta loja.");
+}
+async function saveCategoryLinks(db, tid, categoryId, selections) {
+  for (const [name, ids] of Object.entries(selections)) {
+    const { table, links, primaryCategory } = resources[name];
+    await ownRelations(db, tid, table, ids);
+    const params = [tid, categoryId, ids];
+    await db.query(
+      `DELETE FROM ${links} WHERE estabelecimento_id=$1 AND categoria_id=$2
+       AND NOT (registro_id=ANY($3::bigint[]))`,
+      params,
     );
-    if (!r.rowCount) fail("Vínculo não encontrado nesta loja.");
+    if (primaryCategory)
+      await db.query(
+        `UPDATE ${table} SET categoria_id=NULL
+         WHERE estabelecimento_id=$1 AND categoria_id=$2 AND NOT (id=ANY($3::bigint[]))`,
+        params,
+      );
+    await db.query(
+      `INSERT INTO ${links}(estabelecimento_id,registro_id,categoria_id)
+       SELECT $1,id,$2 FROM ${table} WHERE estabelecimento_id=$1 AND id=ANY($3::bigint[])
+       ${primaryCategory ? "AND categoria_id IS DISTINCT FROM $2" : ""}
+       ON CONFLICT DO NOTHING`,
+      params,
+    );
   }
 }
+const catalogStore = (req) => req.catalogStoreId ?? req.user.estabelecimento_id;
 async function list(req, res) {
   const {
     rows: [loja],
-  } = await pool.query("SELECT * FROM estabelecimentos WHERE id=$1", [
-    req.user.estabelecimento_id,
-  ]);
-  res.json(await catalog(pool, loja, true));
+  } = await pool.query(
+    "SELECT * FROM estabelecimentos WHERE id=$1",
+    [catalogStore(req)],
+  );
+  if (!loja) fail("Estabelecimento não encontrado.", 404);
+  res.json({
+    ...(await catalog(pool, loja, true)),
+    permissoes: { adicionais: req.subscription.adicionais },
+  });
 }
 async function save(req, res) {
+  if (!Object.hasOwn(resources, req.params.resource))
+    fail("Recurso não encontrado.", 404);
   const resource = resources[req.params.resource];
-  if (!resource) fail("Recurso não encontrado.", 404);
-  const data = parse(schemas[resource.schema], req.body),
-    tid = req.user.estabelecimento_id;
+  const {
+    categoria_ids: categoryIds,
+    herdar_categorias: inheritCategories,
+    vinculos,
+    ...data
+  } = parse(schemas[resource.schema], req.body);
+  const tid = catalogStore(req);
+  const recordId = req.params.id && parse(id, req.params.id);
+  const isExtra = resource.schema === "adicional";
   if (
-    ["grupos", "adicionais"].includes(req.params.resource) &&
+    (isExtra ||
+      resource.schema === "grupo" ||
+      vinculos?.grupos !== undefined ||
+      vinculos?.adicionais !== undefined) &&
     !req.subscription.adicionais
   )
     fail("Seu plano não permite gerenciar adicionais.", 403);
-  await ownRelation(tid, "categorias", data.categoria_id);
-  await ownRelation(tid, "produtos", data.produto_id);
-  await ownRelation(tid, "grupos_adicionais", data.grupo_id);
-  const keys = Object.keys(data),
-    values = Object.values(data);
-  let result;
-  if (req.params.id) {
-    result = await pool.query(
-      `UPDATE ${resource.table} SET ${keys.map((k, i) => `${k}=$${i + 3}`).join(",")} WHERE estabelecimento_id=$1 AND id=$2 RETURNING *`,
-      [tid, parse(id, req.params.id), ...values],
+  if (isExtra && (categoryIds !== undefined || inheritCategories !== undefined))
+    data.herda_categorias =
+      categoryIds === null || (inheritCategories ?? false);
+  if (!isExtra && categoryIds !== undefined)
+    data.categoria_id = categoryIds[0] ?? null;
+  const c = await pool.connect();
+  try {
+    await c.query("BEGIN");
+    const store = await c.query(
+      "SELECT id FROM estabelecimentos WHERE id=$1 FOR UPDATE",
+      [tid],
     );
-    if (!result.rowCount) fail("Registro não encontrado.", 404);
-  } else
-    result = await pool.query(
-      `INSERT INTO ${resource.table}(estabelecimento_id,${keys.join(",")}) VALUES($1,${keys.map((_, i) => "$" + (i + 2)).join(",")}) RETURNING *`,
-      [tid, ...values],
+    if (!store.rowCount) fail("Estabelecimento não encontrado.", 404);
+    await ownRelations(
+      c,
+      tid,
+      "categorias",
+      categoryIds ?? [data.categoria_id].filter(Boolean),
     );
-  res.status(req.params.id ? 200 : 201).json(result.rows[0]);
+    await ownRelations(c, tid, "produtos", [data.produto_id].filter(Boolean));
+    await ownRelations(
+      c,
+      tid,
+      "grupos_adicionais",
+      [data.grupo_id].filter(Boolean),
+    );
+    if (
+      recordId &&
+      resource.schema === "grupo" &&
+      categoryIds === undefined &&
+      data.produto_id &&
+      data.categoria_id === null
+    ) {
+      const {
+        rows: [previous],
+      } = await c.query(
+        "SELECT produto_id FROM grupos_adicionais WHERE estabelecimento_id=$1 AND id=$2",
+        [tid, recordId],
+      );
+      // Clientes antigos enviam apenas o produto para grupos com esse vínculo.
+      if (previous?.produto_id) delete data.categoria_id;
+    }
+    const keys = Object.keys(data);
+    const values = Object.values(data);
+    const {
+      rows: [record],
+    } = recordId
+      ? await c.query(
+          `UPDATE ${resource.table} SET ${keys.map((k, i) => `${k}=$${i + 3}`).join(",")} WHERE estabelecimento_id=$1 AND id=$2 RETURNING *`,
+          [tid, recordId, ...values],
+        )
+      : await c.query(
+          `INSERT INTO ${resource.table}(estabelecimento_id,${keys.join(",")}) VALUES($1,${keys.map((_, i) => "$" + (i + 2)).join(",")}) RETURNING *`,
+          [tid, ...values],
+        );
+    if (!record) fail("Registro não encontrado.", 404);
+    if (vinculos) await saveCategoryLinks(c, tid, record.id, vinculos);
+    if (resource.links) {
+      if (categoryIds !== undefined) {
+        await c.query(
+          `DELETE FROM ${resource.links} WHERE estabelecimento_id=$1 AND registro_id=$2`,
+          [tid, record.id],
+        );
+        const extraLinks = (categoryIds ?? []).slice(isExtra ? 0 : 1);
+        if (extraLinks.length) {
+          await c.query(
+            `INSERT INTO ${resource.links}(estabelecimento_id,registro_id,categoria_id)
+             SELECT $1,$2,categoria_id FROM unnest($3::bigint[]) AS ids(categoria_id)`,
+            [tid, record.id, extraLinks],
+          );
+        }
+      } else if (record.categoria_id) {
+        // Um cliente antigo pode escolher como principal um vínculo secundário.
+        await c.query(
+          `DELETE FROM ${resource.links} WHERE estabelecimento_id=$1 AND registro_id=$2 AND categoria_id=$3`,
+          [tid, record.id, record.categoria_id],
+        );
+      }
+      const { rows: links } = await c.query(
+        `SELECT categoria_id FROM ${resource.links} WHERE estabelecimento_id=$1 AND registro_id=$2 ORDER BY categoria_id`,
+        [tid, record.id],
+      );
+      record.categoria_ids = catalog.categoryIds(
+        record,
+        links.map((link) => link.categoria_id),
+      );
+    }
+    await c.query("COMMIT");
+    res.status(recordId ? 200 : 201).json(record);
+  } catch (err) {
+    await c.query("ROLLBACK");
+    throw err;
+  } finally {
+    c.release();
+  }
 }
 async function remove(req, res) {
+  if (!Object.hasOwn(resources, req.params.resource))
+    fail("Recurso não encontrado.", 404);
   const resource = resources[req.params.resource];
-  if (!resource) fail("Recurso não encontrado.", 404);
   // Exclusão lógica preserva o histórico de vendas e os vínculos existentes.
   const r = await pool.query(
     `UPDATE ${resource.table} SET ativo=false WHERE estabelecimento_id=$1 AND id=$2 RETURNING id`,
-    [req.user.estabelecimento_id, parse(id, req.params.id)],
+    [catalogStore(req), parse(id, req.params.id)],
   );
   if (!r.rowCount) fail("Registro não encontrado.", 404);
   res.json({ ok: true });

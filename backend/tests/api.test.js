@@ -529,6 +529,134 @@ test("telefone legado inválido não impede status nem inventa notificação", a
   expect(p.historico.at(-1).usuario_email).toBe("admin@hamburguer.demo");
   expect(p.historico.at(-1).telefone_whatsapp).toBeNull();
 });
+test("vínculos atravessam os dois painéis e respeitam a categoria do pedido e a loja", async () => {
+  const owner = request.agent(app);
+  const email = `catalog-owner-${require("node:crypto").randomUUID()}@qa.test`;
+  await pool.query(
+    "INSERT INTO usuarios(email,senha_hash,papel) VALUES($1,$2,'SUPERADMIN')",
+    [email, await require("bcrypt").hash(password, 10)],
+  );
+  await owner
+    .post("/api/superadmin/login")
+    .send({ email, senha: password })
+    .expect(200);
+  const platform = `/api/superadmin/lojas/${a.estabelecimento_id}/cardapio`;
+  await agent.get(platform + "/catalogo").expect(401);
+  const { body: promo } = await owner
+    .post(platform + "/categorias")
+    .send({ nome: "Promoções" })
+    .expect(201);
+  const group = a.grupos[0];
+  const extra = group.adicionais[0];
+  const categories = [a.categoria_id, promo.id];
+  const productPath = "/api/admin/produtos/" + a.id;
+  await agent
+    .put(productPath)
+    .send({ ...a, categoria_ids: [...categories, promo.id] })
+    .expect(200)
+    .expect(({ body }) => expect(body.categoria_ids).toEqual(categories));
+  await agent
+    .put(productPath)
+    .send({
+      ...a,
+      nome: "Parcial",
+      categoria_ids: [...categories, b.categoria_id],
+    })
+    .expect(400);
+  await owner
+    .put(platform + "/grupos/" + group.id)
+    .send({ ...group, produto_id: a.id, minimo: 1, categoria_ids: categories })
+    .expect(200)
+    .expect(({ body }) =>
+      expect(body).toMatchObject({
+        produto_id: a.id,
+        categoria_ids: categories,
+      }),
+    );
+  await agent
+    .put("/api/admin/adicionais/" + extra.id)
+    .send({ ...extra, categoria_ids: [promo.id] })
+    .expect(200);
+
+  const { body: menu } = await request(app)
+    .get("/api/hamburgueria-demo/cardapio")
+    .expect(200);
+  const product = menu.produtos.find((item) => item.id === a.id);
+  expect(product).toMatchObject({
+    nome: a.nome,
+    preco: a.preco,
+    categoria_ids: categories,
+  });
+  expect(product.grupos[0].adicionais.map((option) => option.id)).not.toContain(
+    extra.id,
+  );
+  expect(
+    product.grupos_por_categoria[promo.id][0].adicionais.map(
+      (option) => option.id,
+    ),
+  ).toContain(extra.id);
+  const data = order(a.id);
+  data.itens[0].adicionais = [extra.id];
+  data.itens[0].categoria_id = a.categoria_id;
+  await request(app)
+    .post("/api/hamburgueria-demo/pedidos")
+    .send(data)
+    .expect(400);
+  data.itens[0].categoria_id = promo.id;
+  const { body: placed } = await request(app)
+    .post("/api/hamburgueria-demo/pedidos")
+    .send(data)
+    .expect(201);
+  expect(placed.total).toBe(2 * (a.preco + extra.preco));
+
+  await agent
+    .put("/api/admin/grupos/" + group.id)
+    .send({ ...group, minimo: 1, categoria_ids: [a.categoria_id] })
+    .expect(200);
+  const { body: updatedMenu } = await request(app)
+    .get("/api/hamburgueria-demo/cardapio")
+    .expect(200);
+  expect(
+    updatedMenu.produtos.find((item) => item.id === a.id).grupos_por_categoria[
+      promo.id
+    ],
+  ).toMatchObject([
+    { id: group.id, minimo: 0, adicionais: [{ id: extra.id }] },
+  ]);
+  await owner
+    .put(platform + "/adicionais/" + extra.id)
+    .send({ ...extra, categoria_ids: [] })
+    .expect(200);
+  await agent
+    .put("/api/admin/grupos/" + group.id)
+    .send({ ...group, categoria_ids: [] })
+    .expect(200);
+  await agent
+    .put(productPath)
+    .send({ ...a, categoria_ids: [] })
+    .expect(200);
+  const { body: adminCatalog } = await owner
+    .get(platform + "/catalogo")
+    .expect(200);
+  expect(adminCatalog.produtos.find((item) => item.id === a.id)).toMatchObject({
+    ativo: true,
+    preco: a.preco,
+    categoria_ids: [],
+  });
+  expect(
+    adminCatalog.grupos.find((item) => item.id === group.id),
+  ).toMatchObject({ ativo: true, categoria_ids: [] });
+  expect(
+    adminCatalog.adicionais.find((item) => item.id === extra.id),
+  ).toMatchObject({ ativo: true, categoria_ids: [] });
+  const { body: orders } = await agent.get("/api/admin/pedidos").expect(200);
+  expect(orders.find((item) => item.id === placed.id).itens[0]).toMatchObject({
+    produto_id: a.id,
+    nome: a.nome,
+    preco: a.preco,
+  });
+});
+
 test("limites de login e pedidos retornam 429", async () => {
   let login, orders;
   for (let i = 0; i < 12; i++) {
